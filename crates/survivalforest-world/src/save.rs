@@ -30,10 +30,10 @@ pub struct PlayerSave {
 
 /// `%APPDATA%\SurvivalForest\saves` o `~/.local/share/SurvivalForest/saves`.
 pub fn data_dir() -> PathBuf {
-    if cfg!(windows) {
-        if let Some(a) = std::env::var_os("APPDATA") {
-            return PathBuf::from(a).join("SurvivalForest");
-        }
+    if cfg!(windows)
+        && let Some(a) = std::env::var_os("APPDATA")
+    {
+        return PathBuf::from(a).join("SurvivalForest");
     }
     if let Some(x) = std::env::var_os("XDG_DATA_HOME") {
         return PathBuf::from(x).join("SurvivalForest");
