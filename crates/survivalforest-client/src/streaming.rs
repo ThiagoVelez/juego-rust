@@ -385,4 +385,15 @@ mod tests {
         assert!(v.x.abs() < 64.0, "{v:?}");
         assert_eq!(v.y, 70.0);
     }
+
+    #[test]
+    fn edge_edit_requests_neighbor_remesh() {
+        let t = remesh_targets(BlockPos::new(16, 70, 5));
+        assert!(t.contains(&ChunkPos::new(1, 0)));
+        assert!(t.contains(&ChunkPos::new(0, 0)), "vecino oeste");
+        let t = remesh_targets(BlockPos::new(-1, 70, -16));
+        assert!(t.contains(&ChunkPos::new(-1, -1)));
+        assert!(t.contains(&ChunkPos::new(0, -1)), "vecino este");
+        assert!(t.contains(&ChunkPos::new(-1, -2)), "vecino norte");
+    }
 }

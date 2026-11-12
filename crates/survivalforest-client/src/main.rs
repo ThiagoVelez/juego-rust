@@ -5,6 +5,7 @@
 // Temporal mientras se completan las tareas de la etapa 1 (se quita en la tarea 13).
 #![allow(dead_code)]
 
+mod interact;
 mod player;
 mod render;
 mod streaming;
@@ -61,6 +62,8 @@ fn main() {
     .insert_resource(Time::<Fixed>::from_hz(20.0))
     .insert_resource(Sensitivity(1.0))
     .init_resource::<player::MoveInput>()
+    .init_resource::<interact::Hotbar>()
+    .init_resource::<interact::Target>()
     .add_systems(Startup, (setup_materials, setup_world))
     .add_systems(FixedUpdate, player::physics_step)
     .add_systems(
@@ -69,6 +72,10 @@ fn main() {
             player::grab_cursor,
             player::read_input,
             player::place_camera,
+            interact::select_slot,
+            interact::aim,
+            interact::edit_blocks,
+            interact::draw_outline,
             rebase_origin,
             stream_chunks,
         )
