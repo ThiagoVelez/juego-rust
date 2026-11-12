@@ -1,0 +1,17 @@
+[package]
+name = "survivalforest-world"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+survivalforest-core = { path = "../survivalforest-core" }
+serde.workspace = true
+noise = "0.9"
+lz4_flex = "0.11"
+postcard = { version = "1", features = ["use-std"] }
+ron = "0.12"
+log = "0.4"
+
+[dev-dependencies]
+tempfile = "3"

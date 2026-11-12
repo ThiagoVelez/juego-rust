@@ -1,0 +1,94 @@
+name: Publicar versión
+
+# Al subir una etiqueta vX.Y.Z se compila para Windows y Linux, se empaqueta
+# (juego + assets + licencias), se genera manifest.json y se publica la versión.
+# El Launcher de CoffeeWorks lee releases/latest/download/manifest.json.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Etiqueta a publicar (p. ej. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Compilar (${{ matrix.target }})
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            target: windows-x64
+          - os: ubuntu-22.04
+            target: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97"
+      - uses: Swatinem/rust-cache@v2
+      - name: Dependencias de Bevy (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - run: cargo build --release -p survivalforest-client
+      - name: Empaquetar
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          mkdir -p pkg dist
+          cp -r assets pkg/
+          cp README.md LICENSE THIRD_PARTY_NOTICES.md pkg/
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp target/release/survivalforest.exe pkg/
+            (cd pkg && 7z a -tzip "../dist/survivalforest-${version}-windows-x64.zip" . > /dev/null)
+          else
+            cp target/release/survivalforest pkg/
+            chmod +x pkg/survivalforest
+            tar -czf "dist/survivalforest-${version}-linux-x64.tar.gz" -C pkg .
+          fi
+          ls -la dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paquete-${{ matrix.target }}
+          path: dist/*
+
+  publish:
+    name: Publicar
+    needs: build
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97"
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Manifiesto
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          version="${tag#v}"
+          cargo run --release -p survivalforest-release -- --version "$version" --repo "$GITHUB_REPOSITORY" \
+            --windows "dist/survivalforest-${version}-windows-x64.zip" \
+            --linux "dist/survivalforest-${version}-linux-x64.tar.gz" > dist/manifest.json
+          cat dist/manifest.json
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: SurvivalForest ${{ github.event.inputs.tag || github.ref_name }}
+          body: |
+            Se instala desde CoffeeWorks › Games. También puedes descargar el paquete de tu sistema, descomprimirlo y abrir `survivalforest`.
+          files: dist/*

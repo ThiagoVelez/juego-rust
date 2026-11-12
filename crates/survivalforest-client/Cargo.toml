@@ -1,0 +1,17 @@
+[package]
+name = "survivalforest-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "survivalforest"
+path = "src/main.rs"
+
+[dependencies]
+survivalforest-core = { path = "../survivalforest-core" }
+survivalforest-world = { path = "../survivalforest-world" }
+survivalforest-sim = { path = "../survivalforest-sim" }
+bevy = "0.20"
+serde.workspace = true
+ron = "0.12"

@@ -1,0 +1,17 @@
+[package]
+name = "survivalforest-release"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sf-release"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"
