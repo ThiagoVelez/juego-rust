@@ -1,0 +1,10 @@
+[package]
+name = "survivalforest-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+survivalforest-core = { path = "../survivalforest-core" }
+survivalforest-world = { path = "../survivalforest-world" }
+glam = "0.33"

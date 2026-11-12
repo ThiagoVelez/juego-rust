@@ -5,15 +5,14 @@
 // Temporal mientras se completan las tareas de la etapa 1 (se quita en la tarea 13).
 #![allow(dead_code)]
 
+mod player;
 mod render;
 mod streaming;
 mod textures;
 
-use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::math::DVec3;
 use bevy::prelude::*;
 use bevy::render::view::screenshot::{Screenshot, save_to_disk};
-use bevy::window::{CursorGrabMode, CursorOptions};
 use render::{BlockMaterial, setup_materials};
 use std::sync::Arc;
 use streaming::{
@@ -26,6 +25,10 @@ use survivalforest_world::{RegionStore, WorldGen, WorldMeta};
 /// `--smoke <segundos>`: arranca, espera, guarda `smoke.png` y sale.
 #[derive(Resource)]
 struct Smoke(f32);
+
+/// Sensibilidad del ratón (1 = normal).
+#[derive(Resource)]
+pub struct Sensitivity(pub f32);
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -55,8 +58,22 @@ fn main() {
     .init_resource::<FloatingOrigin>()
     .init_resource::<Streaming>()
     .add_message::<RemeshRequest>()
-    .add_systems(Startup, (setup_materials, setup_world, setup_camera))
-    .add_systems(Update, (fly_camera, rebase_origin, stream_chunks).chain());
+    .insert_resource(Time::<Fixed>::from_hz(20.0))
+    .insert_resource(Sensitivity(1.0))
+    .init_resource::<player::MoveInput>()
+    .add_systems(Startup, (setup_materials, setup_world))
+    .add_systems(FixedUpdate, player::physics_step)
+    .add_systems(
+        Update,
+        (
+            player::grab_cursor,
+            player::read_input,
+            player::place_camera,
+            rebase_origin,
+            stream_chunks,
+        )
+            .chain(),
+    );
     if let Some(s) = smoke {
         app.insert_resource(Smoke(s))
             .add_systems(Update, smoke_test);
@@ -75,7 +92,7 @@ fn assets_dir() -> String {
     concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets").into()
 }
 
-fn setup_world(mut commands: Commands) {
+fn setup_world(mut commands: Commands, smoke: Option<Res<Smoke>>) {
     // Provisional (tarea 8): mundo temporal de semilla fija; los menús llegan en la tarea 12.
     let dir = std::env::temp_dir().join("survivalforest-dev");
     let meta = WorldMeta {
@@ -90,7 +107,14 @@ fn setup_world(mut commands: Commands) {
     let h = gen_
         .surface_height(0, 0)
         .max(survivalforest_world::worldgen::SEA_LEVEL);
-    commands.insert_resource(Focus(DVec3::new(0.5, h as f64 + 30.0, 0.5)));
+    let (feet, pitch, flying) = if smoke.is_some() {
+        (DVec3::new(0.5, h as f64 + 30.0, 0.5), -0.3, true)
+    } else {
+        (DVec3::new(0.5, h as f64 + 1.0, 0.5), -0.1, false)
+    };
+    commands.insert_resource(Focus(feet));
+    commands.insert_resource(player::Mode(meta.mode));
+    player::spawn_player(&mut commands, feet, -0.6, pitch, flying, 75.0);
     commands.insert_resource(World {
         gen_,
         columns: Default::default(),
@@ -98,89 +122,6 @@ fn setup_world(mut commands: Commands) {
         meta,
         dir,
     });
-}
-
-#[derive(Component)]
-struct FlyCam {
-    yaw: f32,
-    pitch: f32,
-}
-
-fn setup_camera(mut commands: Commands) {
-    commands.spawn((
-        Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection {
-            fov: 75f32.to_radians(),
-            far: 1000.0,
-            ..default()
-        }),
-        Transform::default(),
-        FlyCam {
-            yaw: -0.6,
-            pitch: -0.25,
-        },
-    ));
-}
-
-fn fly_camera(
-    time: Res<Time>,
-    keys: Res<ButtonInput<KeyCode>>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    motion: Res<AccumulatedMouseMotion>,
-    mut cursor: Single<&mut CursorOptions>,
-    mut focus: ResMut<Focus>,
-    origin: Res<FloatingOrigin>,
-    mut cam: Single<(&mut Transform, &mut FlyCam)>,
-) {
-    if mouse.just_pressed(MouseButton::Left) {
-        cursor.grab_mode = CursorGrabMode::Locked;
-        cursor.visible = false;
-    }
-    if keys.just_pressed(KeyCode::Escape) {
-        cursor.grab_mode = CursorGrabMode::None;
-        cursor.visible = true;
-    }
-    let (ref mut tf, ref mut fc) = *cam;
-    if cursor.grab_mode == CursorGrabMode::Locked {
-        fc.yaw -= motion.delta.x * 0.003;
-        fc.pitch = (fc.pitch - motion.delta.y * 0.003).clamp(-1.5, 1.5);
-    }
-    let rot = Quat::from_euler(EulerRot::YXZ, fc.yaw, fc.pitch, 0.0);
-    let fwd = rot * Vec3::NEG_Z;
-    let right = rot * Vec3::X;
-    let mut d = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) {
-        d += fwd;
-    }
-    if keys.pressed(KeyCode::KeyS) {
-        d -= fwd;
-    }
-    if keys.pressed(KeyCode::KeyD) {
-        d += right;
-    }
-    if keys.pressed(KeyCode::KeyA) {
-        d -= right;
-    }
-    if keys.pressed(KeyCode::Space) {
-        d += Vec3::Y;
-    }
-    if keys.pressed(KeyCode::ShiftLeft) {
-        d -= Vec3::Y;
-    }
-    let speed = if keys.pressed(KeyCode::ControlLeft) {
-        80.0
-    } else {
-        20.0
-    };
-    let step = d.normalize_or_zero() * speed * time.delta_secs();
-    focus.0 += DVec3::new(step.x as f64, step.y as f64, step.z as f64);
-    let o = origin.0.origin();
-    tf.translation = Vec3::new(
-        (focus.0.x - o.x as f64) as f32,
-        focus.0.y as f32,
-        (focus.0.z - o.z as f64) as f32,
-    );
-    tf.rotation = rot;
 }
 
 fn smoke_test(

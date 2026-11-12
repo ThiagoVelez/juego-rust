@@ -5142,6 +5142,7 @@ dependencies = [
  "bevy",
  "serde",
  "survivalforest-core",
+ "survivalforest-sim",
  "survivalforest-world",
 ]
 
@@ -5150,6 +5151,15 @@ name = "survivalforest-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "survivalforest-sim"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "survivalforest-core",
+ "survivalforest-world",
 ]
 
 [[package]]
