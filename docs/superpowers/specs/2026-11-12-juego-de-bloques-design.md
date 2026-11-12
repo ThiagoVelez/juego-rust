@@ -1,8 +1,7 @@
 # Diseño: juego de bloques de CoffeeWorks Games
 
-Nombre en clave: **Cafetal**. Es provisional: el nombre definitivo lo decide
-el dueño del proyecto, y no puede contener «Minecraft», «craft» ni parecerse a
-otra marca.
+Nombre: **SurvivalForest** (elegido por el dueño). Antes de publicar conviene
+comprobar en Steam, Google Play y Google que no lo use otro juego o marca.
 
 ## 1. Intención
 
@@ -164,19 +163,19 @@ Es una propuesta del diseñador, no una decisión del dueño, y se puede ajustar
 
 ```
 crates/
-  cafetal-core      tipos compartidos: coordenadas, bloques, objetos, recetas, ids
-  cafetal-world     chunks, generación procedural, iluminación, guardado
-  cafetal-sim       reglas del juego sin gráficos: física, criaturas, IA,
+  survivalforest-core      tipos compartidos: coordenadas, bloques, objetos, recetas, ids
+  survivalforest-world     chunks, generación procedural, iluminación, guardado
+  survivalforest-sim       reglas del juego sin gráficos: física, criaturas, IA,
                     supervivencia, crafteo, clima. Corre igual en cliente y servidor
-  cafetal-net       protocolo propio y sincronización
-  cafetal-client    Bevy: render, mallas, animación, interfaz, sonido, entrada
-  cafetal-server    (futuro) servidor dedicado sin gráficos
-  cafetal-modapi    API de mods WebAssembly (wasmtime)
+  survivalforest-net       protocolo propio y sincronización
+  survivalforest-client    Bevy: render, mallas, animación, interfaz, sonido, entrada
+  survivalforest-server    (futuro) servidor dedicado sin gráficos
+  survivalforest-modapi    API de mods WebAssembly (wasmtime)
 assets/             texturas, modelos (Blockbench → glTF), sonidos, datos (RON)
 tools/              empaquetado de versiones y manifiesto para el Launcher
 ```
 
-`cafetal-sim` es independiente del render. Así el mismo código corre en el
+`survivalforest-sim` es independiente del render. Así el mismo código corre en el
 modo de un jugador (servidor integrado), en LAN y en el servidor dedicado.
 
 ### 8.2 Mundo
@@ -273,8 +272,8 @@ modo de un jugador (servidor integrado), en LAN y en el servidor dedicado.
   interpolan.
 - **LAN:** se anuncia por broadcast, y la lista de partidas se ve en
   «Multijugador».
-- **Futuro, no en este alcance:** servidor dedicado (`cafetal-server`) y juego
-  por internet. El protocolo y `cafetal-sim` no deben impedirlo.
+- **Futuro, no en este alcance:** servidor dedicado (`survivalforest-server`) y juego
+  por internet. El protocolo y `survivalforest-sim` no deben impedirlo.
 
 ### 8.6 Contenido extensible (Games)
 
@@ -290,14 +289,14 @@ modo de un jugador (servidor integrado), en LAN y en el servidor dedicado.
 ### 8.7 Integración con el Launcher (repo CoffeWorks)
 
 - **Release del juego:** cada versión publica en GitHub Releases:
-  - `cafetal-<v>-windows-x64.zip`;
-  - `cafetal-<v>-linux-x64.tar.gz`;
+  - `survivalforest-<v>-windows-x64.zip`;
+  - `survivalforest-<v>-linux-x64.tar.gz`;
   - `manifest.json` con la versión, los archivos, el tamaño, el SHA-256 y la
     versión mínima del Launcher.
 - **Launcher:**
   - lee el manifiesto;
-  - instala en `%LOCALAPPDATA%\CoffeeWorks\Games\cafetal` o en
-    `~/.local/share/CoffeeWorks/Games/cafetal`;
+  - instala en `%LOCALAPPDATA%\CoffeeWorks\Games\survivalforest` o en
+    `~/.local/share/CoffeeWorks/Games/survivalforest`;
   - verifica el SHA-256 y crea accesos directos;
   - ofrece Jugar, Actualizar y Desinstalar, y lista los Mods, TexturePacks y
     Shaders del juego.
@@ -360,4 +359,3 @@ Cada etapa termina en una versión jugable y con CI en verde.
 - Biomas iniciales de la sección 8.2.
 - Texturas de 16×16 con borde tallado. Modelos de criaturas hechos en
   Blockbench.
-- Nombre en clave «Cafetal» hasta que el dueño elija el definitivo.
