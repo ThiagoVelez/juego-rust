@@ -77,6 +77,24 @@ fn checksum(d: &[u8]) -> u32 {
     })
 }
 
+/// Decodifica los bytes de un chunk (suma de verificación, LZ4 y postcard).
+/// Se puede llamar desde cualquier hilo. `None` si están dañados.
+pub fn decode_chunk(p: ChunkPos, data: &[u8]) -> Option<ChunkColumn> {
+    let col = (|| {
+        let (sum, body) = data.split_at_checked(4)?;
+        if u32::from_le_bytes(sum.try_into().ok()?) != checksum(body) {
+            return None;
+        }
+        let raw = lz4_flex::decompress_size_prepended(body).ok()?;
+        let col: ChunkColumn = postcard::from_bytes(&raw).ok()?;
+        (col.pos == p && col.sections.len() == survivalforest_core::SECTIONS).then_some(col)
+    })();
+    if col.is_none() {
+        log::warn!("Chunk ({}, {}) ilegible: se regenerará.", p.x, p.z);
+    }
+    col
+}
+
 /// Almacén de chunks de un mundo (carpeta `region/`).
 pub struct RegionStore {
     dir: PathBuf,
@@ -91,10 +109,24 @@ fn region_of(p: ChunkPos) -> ((i32, i32), usize) {
 }
 
 /// Escribe en `*.tmp` y renombra: un cierre brusco nunca deja el archivo a medias.
+/// Los datos se fuerzan a disco (fsync) antes de renombrar, y en Unix también la carpeta,
+/// para que un corte de luz no deje el archivo vacío.
 pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
+    use std::io::Write;
     let tmp = path.with_extension("tmp");
-    fs::write(&tmp, data)?;
-    fs::rename(&tmp, path)
+    {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(data)?;
+        f.sync_all()?;
+    }
+    fs::rename(&tmp, path)?;
+    #[cfg(unix)]
+    if let Some(dir) = path.parent()
+        && let Ok(d) = fs::File::open(dir)
+    {
+        let _ = d.sync_all();
+    }
+    Ok(())
 }
 
 impl RegionStore {
@@ -130,26 +162,19 @@ impl RegionStore {
         self.open.get_mut(&r).expect("región abierta")
     }
 
+    /// Bytes guardados de un chunk (sin decodificar): rápido, para el hilo principal.
+    pub fn load_raw(&mut self, p: ChunkPos) -> Option<Vec<u8>> {
+        let (r, i) = region_of(p);
+        self.region(r).chunks[i]
+            .as_ref()
+            .filter(|(ver, _)| *ver == CHUNK_FORMAT)
+            .map(|(_, d)| d.clone())
+    }
+
     /// Devuelve `None` si el chunk no existe o está dañado (el llamador lo regenera).
     pub fn load(&mut self, p: ChunkPos) -> Option<ChunkColumn> {
-        let (r, i) = region_of(p);
-        let (ver, data) = self.region(r).chunks[i].clone()?;
-        let col = (|| {
-            if ver != CHUNK_FORMAT {
-                return None;
-            }
-            let (sum, body) = data.split_at_checked(4)?;
-            if u32::from_le_bytes(sum.try_into().ok()?) != checksum(body) {
-                return None;
-            }
-            let raw = lz4_flex::decompress_size_prepended(body).ok()?;
-            let col: ChunkColumn = postcard::from_bytes(&raw).ok()?;
-            (col.pos == p && col.sections.len() == survivalforest_core::SECTIONS).then_some(col)
-        })();
-        if col.is_none() {
-            log::warn!("Chunk ({}, {}) ilegible: se regenerará.", p.x, p.z);
-        }
-        col
+        let raw = self.load_raw(p)?;
+        decode_chunk(p, &raw)
     }
 
     pub fn save(&mut self, col: &ChunkColumn) -> io::Result<()> {
@@ -262,5 +287,26 @@ mod tests {
         s.save(&edited(-1, -1)).unwrap();
         s.flush().unwrap();
         assert!(d.path().join("region").join("r.-1.-1.sfr").exists());
+    }
+
+    #[test]
+    fn raw_bytes_decode_off_thread() {
+        let d = tempfile::tempdir().unwrap();
+        let mut s = RegionStore::open(d.path()).unwrap();
+        let c = edited(2, -5);
+        s.save(&c).unwrap();
+        s.flush().unwrap();
+        let mut s = RegionStore::open(d.path()).unwrap();
+        let raw = s.load_raw(c.pos).expect("bytes");
+        let col = std::thread::spawn(move || decode_chunk(ChunkPos::new(2, -5), &raw))
+            .join()
+            .unwrap()
+            .expect("decodifica");
+        assert_eq!(col.sections, c.sections);
+        assert!(s.load_raw(ChunkPos::new(9, 9)).is_none());
+        assert!(
+            decode_chunk(ChunkPos::new(3, -5), &s.load_raw(c.pos).unwrap()).is_none(),
+            "posición equivocada"
+        );
     }
 }

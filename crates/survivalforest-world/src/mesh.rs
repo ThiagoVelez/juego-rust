@@ -95,6 +95,11 @@ impl View<'_> {
             return AIR;
         }
         let ly = (y - MIN_Y) as u16;
+        // Celda en diagonal (fuera de los 4 vecinos): solo la consulta la oclusión
+        // ambiental de las esquinas; se trata como no opaca para no marcar la rejilla.
+        if !(0..16).contains(&x) && !(0..16).contains(&z) {
+            return AIR;
+        }
         let (c, lx, lz) = match (x, z) {
             (16, _) => (self.nb[0], 0, z),
             (-1, _) => (self.nb[1], 15, z),
@@ -102,9 +107,6 @@ impl View<'_> {
             (_, -1) => (self.nb[3], x, 15),
             _ => (Some(self.col), x, z),
         };
-        if !(0..16).contains(&lx) || !(0..16).contains(&lz) {
-            return STONE;
-        }
         match c {
             Some(c) => c.get(LocalPos::new(lx as u8, ly, lz as u8)),
             None => STONE,
@@ -361,6 +363,28 @@ mod tests {
             let fnorm = m.normals[t[0] as usize];
             let dot = n[0] * fnorm[0] + n[1] * fnorm[1] + n[2] * fnorm[2];
             assert!(dot > 0.0, "triángulo al revés con normal {fnorm:?}");
+        }
+    }
+
+    #[test]
+    fn chunk_corner_is_not_darkened() {
+        // Suelo plano en el chunk y en sus 4 vecinos: la esquina (15,15) no debe oscurecerse.
+        let flat = |cx: i32, cz: i32| {
+            let mut c = ChunkColumn::new(ChunkPos::new(cx, cz));
+            for x in 0..16 {
+                for z in 0..16 {
+                    c.set(BlockPos::new(cx * 16 + x, 60, cz * 16 + z).local(), STONE);
+                }
+            }
+            c
+        };
+        let c = flat(0, 0);
+        let nb = [flat(1, 0), flat(-1, 0), flat(0, 1), flat(0, -1)];
+        let m = mesh_column(&c, [Some(&nb[0]), Some(&nb[1]), Some(&nb[2]), Some(&nb[3])]).opaque;
+        for (i, p) in m.positions.iter().enumerate() {
+            if m.normals[i][1] > 0.5 {
+                assert_eq!(m.ao[i], 1.0, "vértice de arriba oscurecido en {p:?}");
+            }
         }
     }
 }

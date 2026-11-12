@@ -230,6 +230,53 @@ fn relight_kind(w: &mut impl ChunkAccess, pos: BlockPos, k: Kind) {
     propagate(w, k, add);
 }
 
+/// Une la luz de un chunk recién iluminado con la de sus vecinos ya cargados:
+/// propaga desde las celdas de ambos lados de cada borde (luz de cielo y de bloque).
+/// Devuelve los chunks cuya luz pudo cambiar (el propio y sus 8 vecinos cargados).
+pub fn light_seam(w: &mut impl ChunkAccess, p: ChunkPos) -> Vec<ChunkPos> {
+    if w.column(p).is_none() {
+        return Vec::new();
+    }
+    let o = p.origin();
+    for k in [Kind::Sky, Kind::Block] {
+        let mut q = VecDeque::new();
+        for (dx, dz) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            let n = ChunkPos::new(p.x + dx, p.z + dz);
+            if w.column(n).is_none() {
+                continue;
+            }
+            for i in 0..16 {
+                // Celda propia del borde y celda vecina enfrente.
+                let (mine, theirs) = match (dx, dz) {
+                    (1, 0) => ((15, i), (16, i)),
+                    (-1, 0) => ((0, i), (-1, i)),
+                    (0, 1) => ((i, 15), (i, 16)),
+                    _ => ((i, 0), (i, -1)),
+                };
+                for y in MIN_Y..MAX_Y {
+                    for (lx, lz) in [mine, theirs] {
+                        let b = BlockPos::new(o.x + lx, y, o.z + lz);
+                        if get_l(w, b, k).is_some_and(|l| l > 1) {
+                            q.push_back(b);
+                        }
+                    }
+                }
+            }
+        }
+        propagate(w, k, q);
+    }
+    let mut touched = vec![p];
+    for dz in -1..=1 {
+        for dx in -1..=1 {
+            let n = ChunkPos::new(p.x + dx, p.z + dz);
+            if (dx, dz) != (0, 0) && w.column(n).is_some() {
+                touched.push(n);
+            }
+        }
+    }
+    touched
+}
+
 /// Reilumina tras cambiar el bloque en `pos` (puede cruzar a chunks vecinos).
 pub fn relight_around(w: &mut impl ChunkAccess, pos: BlockPos) {
     relight_kind(w, pos, Kind::Sky);
@@ -369,5 +416,56 @@ mod tests {
         m.get_mut(&p.chunk()).unwrap().set(p.local(), AIR);
         relight_around(&mut m, p);
         assert_eq!(m[&below.chunk()].sky(below.local()), 15);
+    }
+
+    #[test]
+    fn seam_pass_carries_light_across_border() {
+        // Antorcha en x=15 del chunk 0; los chunks se iluminan por separado (como al generarlos).
+        let mut a = ChunkColumn::new(ChunkPos::new(0, 0));
+        let t = BlockPos::new(15, 100, 3);
+        a.set(t.local(), TORCH);
+        light_column(&mut a);
+        let mut b = ChunkColumn::new(ChunkPos::new(1, 0));
+        light_column(&mut b);
+        let mut m = HashMap::new();
+        m.insert(a.pos, a);
+        m.insert(b.pos, b);
+        let n = BlockPos::new(16, 100, 3);
+        assert_eq!(
+            m[&n.chunk()].block_light(n.local()),
+            0,
+            "sin costura todavía"
+        );
+        let touched = light_seam(&mut m, ChunkPos::new(1, 0));
+        assert_eq!(m[&n.chunk()].block_light(n.local()), 13);
+        assert!(touched.contains(&ChunkPos::new(1, 0)));
+    }
+
+    #[test]
+    fn seam_pass_shades_under_overhang_across_border() {
+        // Un techo que cubre el borde x=15|16: bajo él, en el chunk vecino, la luz de cielo baja.
+        let mut a = ChunkColumn::new(ChunkPos::new(0, 0));
+        let mut b = ChunkColumn::new(ChunkPos::new(1, 0));
+        for x in 10..22 {
+            for z in 0..16 {
+                let p = BlockPos::new(x, 90, z);
+                if x < 16 {
+                    a.set(p.local(), STONE)
+                } else {
+                    b.set(p.local(), STONE)
+                }
+            }
+        }
+        light_column(&mut a);
+        light_column(&mut b);
+        let mut m = HashMap::new();
+        m.insert(a.pos, a);
+        m.insert(b.pos, b);
+        light_seam(&mut m, ChunkPos::new(1, 0));
+        light_seam(&mut m, ChunkPos::new(0, 0));
+        // Bajo el techo, a 6 bloques del borde abierto de la izquierda (x=10) y de la derecha (x=21).
+        let under = BlockPos::new(16, 85, 8);
+        let v = m[&under.chunk()].sky(under.local());
+        assert!(v < 15 && v > 0, "luz bajo el techo en el borde: {v}");
     }
 }

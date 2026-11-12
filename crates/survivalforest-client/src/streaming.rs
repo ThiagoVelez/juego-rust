@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use survivalforest_core::{BlockId, BlockPos, CHUNK, ChunkPos};
 use survivalforest_world::{
-    ChunkAccess, ChunkColumn, ChunkMeshes, RegionStore, WorldGen, WorldMeta, light_column,
-    mesh_column, relight_around,
+    ChunkAccess, ChunkColumn, ChunkMeshes, RegionStore, WorldGen, WorldMeta, decode_chunk,
+    light_column, light_seam, mesh_column, relight_around,
 };
 
 /// Chunks en espiral desde el centro, del más cercano al más lejano.
@@ -134,7 +134,7 @@ pub fn set_block(
     true
 }
 
-/// Chunks a remallar tras editar `pos`: el suyo, los vecinos de borde y, por la luz, todos los vecinos.
+/// Chunks a remallar tras editar `pos`: el suyo y sus 8 vecinos (bordes y luz).
 pub fn remesh_targets(pos: BlockPos) -> Vec<ChunkPos> {
     let c = pos.chunk();
     let l = pos.local();
@@ -151,10 +151,13 @@ pub fn remesh_targets(pos: BlockPos) -> Vec<ChunkPos> {
     if l.z as i32 == CHUNK - 1 {
         v.push(ChunkPos::new(c.x, c.z + 1));
     }
-    // La luz puede cambiar hasta 15 bloques alrededor.
-    for n in c.neighbors() {
-        if !v.contains(&n) {
-            v.push(n);
+    // La luz puede cambiar hasta 14 bloques alrededor: los 8 vecinos, diagonales incluidas.
+    for dz in -1..=1 {
+        for dx in -1..=1 {
+            let n = ChunkPos::new(c.x + dx, c.z + dz);
+            if !v.contains(&n) {
+                v.push(n);
+            }
         }
     }
     v
@@ -180,7 +183,8 @@ pub fn stream_chunks(
     let vd = vd.0 as i32;
     let pool = AsyncComputeTaskPool::get();
 
-    // 1. Generar o cargar lo que falta (radio vd + 1 para tener vecinos al mallar).
+    // 1. Cargar o generar lo que falta (radio vd + 1 para tener vecinos al mallar).
+    //    Del disco solo se leen los bytes aquí; decodificar, generar e iluminar va en tareas.
     for p in spiral(center, vd + 1) {
         if st.gen_tasks.len() >= MAX_TASKS {
             break;
@@ -188,34 +192,33 @@ pub fn stream_chunks(
         if world.columns.contains_key(&p) || st.gen_tasks.contains_key(&p) {
             continue;
         }
-        if let Some(mut col) = world.store.load(p) {
-            light_column(&mut col);
-            world.columns.insert(p, col);
-            mark_around(&mut st, p);
-            continue;
-        }
+        let raw = world.store.load_raw(p);
         let g = world.gen_.clone();
         st.gen_tasks.insert(
             p,
             pool.spawn(async move {
-                let mut c = g.generate(p);
+                let mut c = raw
+                    .and_then(|r| decode_chunk(p, &r))
+                    .unwrap_or_else(|| g.generate(p));
                 light_column(&mut c);
                 c
             }),
         );
     }
-    let done: Vec<ChunkPos> = st
+    let done: Vec<(ChunkPos, ChunkColumn)> = st
         .gen_tasks
         .iter_mut()
         .filter_map(|(p, t)| check_ready(t).map(|c| (*p, c)))
-        .map(|(p, c)| {
-            world.columns.insert(p, c);
-            p
-        })
         .collect();
-    for p in done {
+    for (p, c) in done {
         st.gen_tasks.remove(&p);
-        mark_around(&mut st, p);
+        world.columns.insert(p, c);
+        // Une la luz con los vecinos ya cargados y vuelve a mallar los que cambien.
+        for n in light_seam(&mut *world, p) {
+            if n == p || st.entities.contains_key(&n) || st.mesh_tasks.contains_key(&n) {
+                st.needs_mesh.insert(n);
+            }
+        }
     }
 
     // 2. Remallados pedidos (ediciones).
@@ -311,15 +314,6 @@ pub fn stream_chunks(
     }
 }
 
-fn mark_around(st: &mut Streaming, p: ChunkPos) {
-    st.needs_mesh.insert(p);
-    for n in p.neighbors() {
-        if st.entities.contains_key(&n) || st.mesh_tasks.contains_key(&n) {
-            st.needs_mesh.insert(n);
-        }
-    }
-}
-
 /// Mueve el origen flotante cuando el jugador se aleja más de 2 chunks.
 pub fn rebase_origin(
     focus: Res<Focus>,
@@ -382,5 +376,19 @@ mod tests {
         assert!(t.contains(&ChunkPos::new(-1, -1)));
         assert!(t.contains(&ChunkPos::new(0, -1)), "vecino este");
         assert!(t.contains(&ChunkPos::new(-1, -2)), "vecino norte");
+    }
+
+    #[test]
+    fn edit_near_corner_remeshes_diagonals() {
+        let t = remesh_targets(BlockPos::new(15, 70, 15));
+        for d in [
+            ChunkPos::new(1, 1),
+            ChunkPos::new(-1, -1),
+            ChunkPos::new(1, -1),
+            ChunkPos::new(-1, 1),
+        ] {
+            assert!(t.contains(&d), "falta la diagonal {d:?}");
+        }
+        assert_eq!(t.len(), 9);
     }
 }
