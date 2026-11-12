@@ -1,7 +1,9 @@
 //! Generación procedural determinista: semilla → columna de chunk.
 
 mod biome;
+mod carve;
 mod climate;
+mod features;
 
 pub use biome::Biome;
 
@@ -16,6 +18,7 @@ pub const SEA_LEVEL: i32 = 62;
 pub struct WorldGen {
     pub seed: u64,
     climate: Climate,
+    pub(crate) caves: carve::CaveNoise,
 }
 
 fn lerp(a: f64, b: f64, t: f64) -> f64 {
@@ -47,6 +50,7 @@ impl WorldGen {
         WorldGen {
             seed,
             climate: Climate::new(seed),
+            caves: carve::CaveNoise::new(seed),
         }
     }
 
@@ -117,6 +121,11 @@ impl WorldGen {
                 }
             }
         }
+        col.rebuild_heightmap();
+        carve::carve_caves(&mut col, self);
+        carve::place_ores(&mut col, self.seed);
+        col.rebuild_heightmap();
+        features::decorate(&mut col, self);
         col.rebuild_heightmap();
         col
     }
