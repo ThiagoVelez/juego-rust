@@ -58,6 +58,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "survivalforest-world"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "survivalforest-core",
+]
+
+[[package]]
 name = "syn"
 version = "3.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"

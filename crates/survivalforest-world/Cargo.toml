@@ -1,0 +1,9 @@
+[package]
+name = "survivalforest-world"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+survivalforest-core = { path = "../survivalforest-core" }
+serde.workspace = true
