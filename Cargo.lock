@@ -5140,6 +5140,7 @@ name = "survivalforest-client"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "ron",
  "serde",
  "survivalforest-core",
  "survivalforest-sim",

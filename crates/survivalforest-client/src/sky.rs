@@ -100,9 +100,10 @@ pub fn apply_time(
     mut sky_mats: ResMut<Assets<SkyMaterial>>,
     mut block_mats: ResMut<Assets<BlockMaterial>>,
     mut clear: ResMut<ClearColor>,
-    mut world: ResMut<World>,
+    world: Option<ResMut<World>>,
+    vd: Res<crate::streaming::ViewDistance>,
     mut dome: Query<&mut Transform, With<SkyDome>>,
-    cam: Single<&GlobalTransform, With<Camera3d>>,
+    cams: Query<&GlobalTransform, (With<Camera3d>, Without<SkyDome>)>,
 ) {
     let wt = gt.time;
     let (zen, hor) = wt.sky_colors();
@@ -117,15 +118,22 @@ pub fn apply_time(
             clouds: Vec4::new(time.elapsed_secs(), o.x as f32, o.z as f32, 0.0),
         };
     }
+    let (near, far) = crate::render::fog_range(vd.0);
     for h in [&blocks.opaque, &blocks.cutout, &blocks.water] {
         if let Some(mut m) = block_mats.get_mut(h) {
             m.params.sun_light = wt.sun_light();
             m.params.fog_color = hor.to_vec4();
+            m.params.fog_near = near;
+            m.params.fog_far = far;
         }
     }
     clear.0 = Color::from(hor);
-    world.meta.time_ticks = wt.ticks;
-    for mut t in &mut dome {
-        t.translation = cam.translation();
+    if let Some(mut w) = world {
+        w.meta.time_ticks = wt.ticks;
+    }
+    if let Some(cam) = cams.iter().next() {
+        for mut t in &mut dome {
+            t.translation = cam.translation();
+        }
     }
 }

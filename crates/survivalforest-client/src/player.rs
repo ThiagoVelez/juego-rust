@@ -83,7 +83,7 @@ pub fn read_input(
     motion: Res<AccumulatedMouseMotion>,
     cursor: Single<&CursorOptions>,
     mode: Res<Mode>,
-    sens: Res<crate::Sensitivity>,
+    settings: Res<crate::settings::Settings>,
     mut input: ResMut<MoveInput>,
     mut q: Single<&mut Player>,
 ) {
@@ -95,8 +95,8 @@ pub fn read_input(
         };
         return;
     }
-    p.yaw -= motion.delta.x * 0.0025 * sens.0;
-    p.pitch = (p.pitch - motion.delta.y * 0.0025 * sens.0).clamp(-1.55, 1.55);
+    p.yaw -= motion.delta.x * 0.0025 * settings.sensitivity;
+    p.pitch = (p.pitch - motion.delta.y * 0.0025 * settings.sensitivity).clamp(-1.55, 1.55);
     let mut d = Vec2::ZERO;
     if keys.pressed(KeyCode::KeyW) {
         d.y += 1.0;

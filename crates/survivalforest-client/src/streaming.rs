@@ -6,7 +6,6 @@ use bevy::tasks::{AsyncComputeTaskPool, Task, futures::check_ready};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
-use survivalforest_core::block::AIR;
 use survivalforest_core::{BlockId, BlockPos, CHUNK, ChunkPos};
 use survivalforest_world::{
     ChunkAccess, ChunkColumn, ChunkMeshes, RegionStore, WorldGen, WorldMeta, light_column,
@@ -334,18 +333,6 @@ pub fn rebase_origin(
             *t = chunk_transform(cm.0, c);
         }
     }
-}
-
-/// ¿Hay un bloque sólido? (los chunks sin cargar cuentan como sólidos)
-pub fn solid_at(world: &World, p: BlockPos) -> bool {
-    match world.block_at(p) {
-        Some(b) => b.def().solid,
-        None => p.in_height(),
-    }
-}
-
-pub fn is_air(world: &World, p: BlockPos) -> bool {
-    world.block_at(p) == Some(AIR)
 }
 
 #[cfg(test)]
