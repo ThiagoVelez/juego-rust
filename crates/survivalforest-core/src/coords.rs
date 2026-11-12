@@ -15,7 +15,9 @@ pub struct BlockPos {
     pub z: i32,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Serialize, Deserialize, PartialOrd, Ord)]
+#[derive(
+    Copy, Clone, Eq, PartialEq, Hash, Debug, Default, Serialize, Deserialize, PartialOrd, Ord,
+)]
 pub struct ChunkPos {
     pub x: i32,
     pub z: i32,

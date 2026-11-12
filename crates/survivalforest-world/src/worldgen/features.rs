@@ -72,7 +72,7 @@ pub fn decorate(col: &mut ChunkColumn, wg: &WorldGen) {
                 continue;
             }
             match biome {
-                Biome::CoffeeMountain if wx.rem_euclid(3) == 0 && rng.chance(0.7) => {
+                Biome::CoffeeMountain if wx.rem_euclid(4) == 0 && rng.chance(0.55) => {
                     put(col, lx, h + 1, lz, COFFEE_BUSH, true);
                     if rng.chance(0.4) {
                         put(col, lx, h + 2, lz, COFFEE_BUSH, true);
