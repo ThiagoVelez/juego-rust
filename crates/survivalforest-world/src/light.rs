@@ -131,7 +131,7 @@ pub fn light_column(col: &mut ChunkColumn) {
             // Luz de cielo: 15 hacia abajo; hojas y agua restan 1 por bloque.
             let mut l = 15u8;
             let edge = hmax(x as i32, z as i32);
-            let mut ly = (MAX_Y - MIN_Y - 1) as i32;
+            let mut ly = MAX_Y - MIN_Y - 1;
             while ly >= 0 && l > 0 {
                 let p = LocalPos::new(x, ly as u16, z);
                 let b = col.get(p);
