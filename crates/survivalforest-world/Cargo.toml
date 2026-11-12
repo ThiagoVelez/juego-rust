@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 survivalforest-core = { path = "../survivalforest-core" }
 serde.workspace = true
+noise = "0.9"
