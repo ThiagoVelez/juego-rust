@@ -3,10 +3,14 @@
 pub mod chunk;
 pub mod light;
 pub mod mesh;
+pub mod region;
+pub mod save;
 
 pub use chunk::{ChunkColumn, Section};
 pub use light::{ChunkAccess, light_column, relight_around};
 pub use mesh::{ChunkMeshes, MeshData, mesh_column};
+pub use region::RegionStore;
+pub use save::{PlayerSave, WorldMeta};
 pub mod worldgen;
 
 pub use worldgen::{Biome, WorldGen};
