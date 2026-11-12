@@ -127,9 +127,10 @@ fn load_pack_png(path: &std::path::Path) -> Option<Vec<u8>> {
     )
     .ok()?;
     let rgba = img.convert(TextureFormat::Rgba8UnormSrgb)?;
-    (rgba.width() == T as u32 && rgba.height() == T as u32)
-        .then(|| rgba.data.clone())
-        .flatten()
+    if rgba.width() != rgba.height() {
+        return None;
+    }
+    crate::textures::fit_tile(rgba.data.as_ref()?, rgba.width() as usize)
 }
 
 /// Color del horizonte (niebla y fondo) de día.
