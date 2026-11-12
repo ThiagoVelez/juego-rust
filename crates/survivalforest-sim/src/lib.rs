@@ -3,5 +3,6 @@
 pub mod edit;
 pub mod physics;
 pub mod raycast;
+pub mod time;
 
 pub use physics::Aabb;

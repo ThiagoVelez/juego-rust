@@ -8,6 +8,7 @@
 mod interact;
 mod player;
 mod render;
+mod sky;
 mod streaming;
 mod textures;
 
@@ -54,6 +55,8 @@ fn main() {
             }),
     )
     .add_plugins(MaterialPlugin::<BlockMaterial>::default())
+    .add_plugins(MaterialPlugin::<sky::SkyMaterial>::default())
+    .init_resource::<sky::GameTime>()
     .insert_resource(ClearColor(render::HORIZON))
     .insert_resource(ViewDistance(if smoke.is_some() { 8 } else { 12 }))
     .init_resource::<FloatingOrigin>()
@@ -64,8 +67,8 @@ fn main() {
     .init_resource::<player::MoveInput>()
     .init_resource::<interact::Hotbar>()
     .init_resource::<interact::Target>()
-    .add_systems(Startup, (setup_materials, setup_world))
-    .add_systems(FixedUpdate, player::physics_step)
+    .add_systems(Startup, (setup_materials, setup_world, sky::setup_sky))
+    .add_systems(FixedUpdate, (player::physics_step, sky::advance_time))
     .add_systems(
         Update,
         (
@@ -78,6 +81,8 @@ fn main() {
             interact::draw_outline,
             rebase_origin,
             stream_chunks,
+            sky::toggle_fast,
+            sky::apply_time,
         )
             .chain(),
     );
@@ -110,6 +115,15 @@ fn setup_world(mut commands: Commands, smoke: Option<Res<Smoke>>) {
         time_ticks: 6000,
         created: "0".into(),
     };
+    let start = std::env::args()
+        .skip_while(|a| a != "--time")
+        .nth(1)
+        .and_then(|t| t.parse().ok())
+        .unwrap_or(meta.time_ticks);
+    commands.insert_resource(sky::GameTime {
+        time: survivalforest_sim::time::WorldTime { ticks: start },
+        fast: false,
+    });
     let gen_ = Arc::new(WorldGen::new(meta.seed));
     let h = gen_
         .surface_height(0, 0)
