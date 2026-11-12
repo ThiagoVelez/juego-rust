@@ -90,7 +90,7 @@ pub fn tiles_image() -> Image {
     let mut data = Vec::with_capacity(tiles.len() * T * T * 4);
     for (i, t) in tiles.iter().enumerate() {
         let custom = std::path::Path::new("assets/textures").join(format!("{}.png", TILE_NAMES[i]));
-        match load_png_16(&custom) {
+        match load_pack_png(&custom) {
             Some(px) => data.extend_from_slice(&px),
             None => data.extend_from_slice(t),
         }
@@ -114,8 +114,8 @@ pub fn tiles_image() -> Image {
     img
 }
 
-/// PNG de 16×16 en RGBA (para los TexturePacks); `None` si no existe o no encaja.
-fn load_png_16(path: &std::path::Path) -> Option<Vec<u8>> {
+/// PNG de un TexturePack (32×32, o 16×16 ampliado); `None` si no existe o no encaja.
+fn load_pack_png(path: &std::path::Path) -> Option<Vec<u8>> {
     let bytes = std::fs::read(path).ok()?;
     let img = Image::from_buffer(
         &bytes,

@@ -8,6 +8,7 @@ Juego de supervivencia y construcción en un mundo de bloques, enorme y procedur
 
 - **Mundo procedural prácticamente infinito** (±30 millones de bloques, altura de −64 a 320), determinista por semilla, con 11 biomas: montaña cafetera, páramo, selva húmeda, valle de guaduales, sabana, desierto rojo, nevado, costa, océano, manglar y bosque de niebla.
 - Cuevas, menas (carbón, cobre, hierro, oro y cuarzo), árboles, guaduales, cafetales en hileras y frailejones.
+- Texturas propias de 32×32 (los TexturePacks pueden ser de 32×32 o de 16×16, que se amplía sin suavizar).
 - Luz de cielo y de antorchas, oclusión ambiental y niebla.
 - **Modos supervivencia y creativo** (en creativo, doble espacio para volar).
 - Romper y poner bloques.
@@ -66,6 +67,6 @@ cargo run -p survivalforest-client -- --smoke 30
 
 ## Licencias
 
-El código es MIT. Todo el arte (texturas pintadas por código, cielo y nubes) es propio; la fuente Nunito usa la licencia SIL OFL 1.1 (`assets/fonts/OFL-Nunito.txt`). Las licencias de las dependencias están en [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+El código es MIT. Todo el arte (texturas de 32×32 pintadas por código, cielo y nubes) es propio; la fuente Nunito usa la licencia SIL OFL 1.1 (`assets/fonts/OFL-Nunito.txt`). Las licencias de las dependencias están en [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 SurvivalForest es un juego original: no usa nombres, texturas, sonidos ni código de otros juegos.
