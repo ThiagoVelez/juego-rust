@@ -54,3 +54,33 @@ jobs:
           name: captura-smoke
           path: smoke.png
           if-no-files-found: ignore
+
+  build:
+    name: Compilar versión (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.97"
+      - uses: Swatinem/rust-cache@v2
+      - name: Dependencias de Bevy (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
+      - run: cargo build --release -p survivalforest-client
+      - name: Empaquetar
+        shell: bash
+        run: |
+          mkdir -p dist/SurvivalForest
+          cp -r assets dist/SurvivalForest/
+          cp README.md LICENSE THIRD_PARTY_NOTICES.md dist/SurvivalForest/
+          if [ "$RUNNER_OS" = "Windows" ]; then cp target/release/survivalforest.exe dist/SurvivalForest/; else cp target/release/survivalforest dist/SurvivalForest/; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: survivalforest-${{ runner.os }}
+          path: dist/SurvivalForest
