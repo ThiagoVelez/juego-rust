@@ -47,3 +47,40 @@ impl Experience {
         orb
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xp_levels_curve() {
+        let mut x = Experience::default();
+        x.add(6.0);
+        assert_eq!(x.level, 0);
+        x.add(1.0);
+        assert_eq!((x.level, x.points), (1, 0.0));
+        x.add(10.0 + 13.0);
+        assert_eq!(x.level, 3);
+        assert!(x.progress() == 0.0);
+    }
+
+    #[test]
+    fn xp_death_keeps_half_in_orb() {
+        let mut x = Experience::default();
+        x.add(30.0);
+        assert_eq!(x.drop_on_death(), 15.0);
+        assert_eq!(x, Experience::default());
+    }
+
+    #[test]
+    fn spend_levels() {
+        let mut x = Experience {
+            level: 2,
+            points: 3.0,
+            total: 20.0,
+        };
+        assert!(!x.spend_levels(3));
+        assert!(x.spend_levels(2));
+        assert_eq!(x.level, 0);
+    }
+}

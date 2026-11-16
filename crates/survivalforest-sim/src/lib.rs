@@ -8,6 +8,7 @@ pub mod inventory;
 pub mod physics;
 pub mod raycast;
 pub mod time;
+pub mod vitals;
 pub mod xp;
 
 pub use physics::Aabb;
