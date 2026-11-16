@@ -150,6 +150,20 @@ pub fn enter_world(
         flying,
         settings.fov,
     );
+    // Supervivencia: inventario, vida y experiencia; baúles, hornos y objetos cercanos.
+    let mut state =
+        crate::survival::PlayerState::from_save(survivalforest_sim::persist::load_survival(&dir));
+    if state.spawn.is_none() {
+        let p = spawn_point(&gen_);
+        state.spawn = Some([p.x, p.y, p.z]);
+    }
+    if meta.mode == survivalforest_core::GameMode::Creative {
+        crate::interact::creative_start_bar(&mut state);
+    }
+    let mut extras = crate::survival::WorldExtras::default();
+    crate::survival::load_nearby_regions(&dir, &mut extras, feet);
+    commands.insert_resource(state);
+    commands.insert_resource(extras);
     commands.insert_resource(World {
         gen_,
         columns: Default::default(),
@@ -183,9 +197,27 @@ pub fn finish_loading(
     }
 }
 
-/// Guarda chunks, hora y jugador.
-pub fn save_world(world: &mut World, player: Option<(&Player, &WorldPos)>) {
+/// Guarda chunks, hora, jugador y lo de la supervivencia.
+pub fn save_world(
+    world: &mut World,
+    player: Option<(&Player, &WorldPos)>,
+    surv: Option<(&crate::survival::PlayerState, &crate::survival::WorldExtras)>,
+) {
     world.save_all();
+    if let Some((st, ex)) = surv {
+        if let Err(e) = survivalforest_sim::persist::save_survival(&world.dir, &st.to_save()) {
+            warn!("No se pudo guardar el inventario: {e}");
+        }
+        let mut regions = survivalforest_sim::persist::regions_in(&ex.be, &ex.items);
+        regions.extend(ex.loaded.iter().copied());
+        for r in regions {
+            if let Err(e) =
+                survivalforest_sim::persist::save_extras(&world.dir, r, &ex.be, &ex.items)
+            {
+                warn!("No se pudieron guardar los baúles y objetos: {e}");
+            }
+        }
+    }
     if let Err(e) = save_meta(&world.dir, &world.meta) {
         warn!("No se pudo guardar el mundo: {e}");
     }
@@ -206,13 +238,15 @@ pub fn autosave(
     time: Res<Time>,
     mut last: Local<f32>,
     mut world: ResMut<World>,
+    st: Res<crate::survival::PlayerState>,
+    ex: Res<crate::survival::WorldExtras>,
     q: Single<(&Player, &WorldPos)>,
 ) {
     let now = time.elapsed_secs();
     if now - *last >= 60.0 {
         *last = now;
         let (p, wp) = *q;
-        save_world(&mut world, Some((p, wp)));
+        save_world(&mut world, Some((p, wp)), Some((&st, &ex)));
         info!("Mundo guardado");
     }
 }
@@ -221,13 +255,16 @@ pub fn autosave(
 pub fn save_on_exit(
     mut exits: MessageReader<AppExit>,
     world: Option<ResMut<World>>,
+    st: Option<Res<crate::survival::PlayerState>>,
+    ex: Option<Res<crate::survival::WorldExtras>>,
     q: Query<(&Player, &WorldPos)>,
 ) {
     if exits.read().next().is_none() {
         return;
     }
     if let Some(mut w) = world {
-        save_world(&mut w, q.iter().next());
+        let surv = st.as_deref().zip(ex.as_deref());
+        save_world(&mut w, q.iter().next(), surv);
     }
 }
 
@@ -237,9 +274,15 @@ pub fn leave_world(
     q: Query<(Entity, &Player, &WorldPos)>,
     chunks: Query<Entity, With<ChunkMesh>>,
     mut st: ResMut<Streaming>,
+    ps: Option<Res<crate::survival::PlayerState>>,
+    ex: Option<Res<crate::survival::WorldExtras>>,
 ) {
     let player = q.iter().next();
-    save_world(&mut world, player.map(|(_, p, wp)| (p, wp)));
+    save_world(
+        &mut world,
+        player.map(|(_, p, wp)| (p, wp)),
+        ps.as_deref().zip(ex.as_deref()),
+    );
     if let Some((e, _, _)) = player {
         commands.entity(e).despawn();
     }

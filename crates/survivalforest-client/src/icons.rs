@@ -266,6 +266,79 @@ pub fn item_icon(key: &str) -> Option<Tile> {
     Some(t)
 }
 
+/// Iconos del HUD: corazones, jamones, burbuja de aire y grano de café (nivel).
+pub fn hud_icon(name: &str) -> Tile {
+    let mut c = Canvas::new();
+    let heart = |x: f32, y: f32| {
+        let (x, y) = ((x - 16.0) / 12.0, (16.0 - y) / 12.0 + 0.15);
+        (x * x + y * y - 0.55).powi(3) - x * x * y * y * y < 0.0
+    };
+    let ham = |x: f32, y: f32| ((x - 18.0) / 10.0).powi(2) + ((y - 14.0) / 9.0).powi(2) < 1.0;
+    let bone = |x: f32, y: f32| {
+        (5.0..12.0).contains(&x) && (20.0..24.0).contains(&y)
+            || ((x - 6.0).powi(2) + (y - 25.0).powi(2)) < 5.0
+    };
+    match name {
+        "heart_full" | "heart_half" | "heart_empty" => {
+            c.fill(hex("#3a1a1a"), hex("#4a2424"), 61, heart);
+            if name != "heart_empty" {
+                let half = name == "heart_half";
+                c.fill(hex("#c42a2a"), hex("#ff5a4a"), 62, |x, y| {
+                    heart(x, y) && (!half || x < 16.0)
+                });
+            }
+        }
+        "ham_full" | "ham_half" | "ham_empty" => {
+            c.fill(hex("#3a2a20"), hex("#4a3628"), 63, |x, y| {
+                ham(x, y) || bone(x, y)
+            });
+            if name != "ham_empty" {
+                let half = name == "ham_half";
+                c.fill(hex("#c0643a"), hex("#e89a6a"), 64, |x, y| {
+                    ham(x, y) && (!half || x > 18.0)
+                });
+                c.fill(hex("#e8e0d0"), hex("#ffffff"), 65, |x, y| {
+                    bone(x, y) && !half
+                });
+            }
+        }
+        "bubble" => {
+            c.fill(hex("#5aa8e0"), hex("#bfe4ff"), 66, |x, y| {
+                let d = ((x - 16.0).powi(2) + (y - 16.0).powi(2)).sqrt();
+                (8.0..11.0).contains(&d) || ((x - 12.0).powi(2) + (y - 12.0).powi(2)) < 4.0
+            });
+        }
+        _ => {
+            // Grano de café con su surco.
+            c.fill(hex("#4a2a18"), hex("#7a4a2a"), 67, |x, y| {
+                ((x - 16.0) / 11.0).powi(2) + ((y - 16.0) / 14.0).powi(2) < 1.0
+            });
+            c.line(
+                16.0,
+                5.0,
+                15.0,
+                27.0,
+                2.0,
+                hex("#2a160c"),
+                hex("#3a2010"),
+                68,
+            );
+        }
+    }
+    c.tile()
+}
+
+pub const HUD_ICONS: [&str; 8] = [
+    "heart_full",
+    "heart_half",
+    "heart_empty",
+    "ham_full",
+    "ham_half",
+    "ham_empty",
+    "bubble",
+    "bean",
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,6 +356,9 @@ mod tests {
             assert!(opaque(&t) >= 40, "{} casi vacío", it.key);
         }
         assert!(item_icon("stone").is_none());
+        for n in HUD_ICONS {
+            assert!(opaque(&hud_icon(n)) >= 40, "{n}");
+        }
     }
 
     #[test]

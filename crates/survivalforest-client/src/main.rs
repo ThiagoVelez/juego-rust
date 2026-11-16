@@ -7,6 +7,7 @@
     clippy::type_complexity
 )]
 
+mod drops_view;
 mod hud;
 mod icons;
 mod interact;
@@ -17,6 +18,7 @@ mod session;
 mod settings;
 mod sky;
 mod streaming;
+mod survival;
 mod textures;
 
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
@@ -77,7 +79,8 @@ fn main() {
     .init_resource::<Streaming>()
     .init_resource::<sky::GameTime>()
     .init_resource::<player::MoveInput>()
-    .init_resource::<interact::Hotbar>()
+    .init_resource::<interact::OpenRequest>()
+    .init_resource::<interact::UiOpen>()
     .init_resource::<interact::Target>()
     .init_resource::<menu::Screen>()
     .init_resource::<menu::UiAction>()
@@ -90,6 +93,7 @@ fn main() {
         OnEnter(AppState::Menu),
         (
             session::leave_world.run_if(resource_exists::<World>),
+            drops_view::despawn_drops,
             session::spawn_menu_camera,
             menu::on_enter_menu,
         )
@@ -108,7 +112,13 @@ fn main() {
     // Simulación (solo jugando)
     .add_systems(
         FixedUpdate,
-        (player::physics_step, sky::advance_time).run_if(in_state(AppState::InGame)),
+        (
+            player::physics_step,
+            survival::survival_step,
+            sky::advance_time,
+        )
+            .chain()
+            .run_if(in_state(AppState::InGame)),
     )
     // Menús
     .add_systems(
@@ -143,8 +153,10 @@ fn main() {
             interact::select_slot,
             interact::aim,
             interact::edit_blocks,
+            interact::drop_held,
             interact::draw_outline,
-            hud::update_slots,
+            drops_view::sync_drops,
+            hud::update_hud,
             hud::update_debug,
             sky::toggle_fast,
             session::autosave,
