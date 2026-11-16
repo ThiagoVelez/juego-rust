@@ -10,6 +10,7 @@ pub mod furnace;
 pub mod grindstone;
 pub mod inventory;
 pub mod mining;
+pub mod persist;
 pub mod physics;
 pub mod raycast;
 pub mod swim;
