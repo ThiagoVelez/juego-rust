@@ -16,6 +16,10 @@ pub struct Player {
     pub vel: DVec3,
     pub on_ground: bool,
     pub flying: bool,
+    /// Saltó en este tick (gasta hambre).
+    pub jumped: bool,
+    /// Cuerpo y cabeza dentro del agua.
+    pub in_water: (bool, bool),
     pub yaw: f32,
     pub pitch: f32,
 }
@@ -67,6 +71,8 @@ pub fn spawn_player(
             vel: DVec3::ZERO,
             on_ground: false,
             flying,
+            jumped: false,
+            in_water: (false, false),
             yaw,
             pitch,
         },
@@ -113,7 +119,8 @@ pub fn read_input(
     input.dir = d.normalize_or_zero();
     input.jump = keys.pressed(KeyCode::Space);
     input.descend = keys.pressed(KeyCode::ShiftLeft);
-    input.sprint = keys.pressed(KeyCode::ControlLeft);
+    // Ctrl+Q tira la pila: ese Ctrl no cuenta como correr.
+    input.sprint = keys.pressed(KeyCode::ControlLeft) && !keys.pressed(KeyCode::KeyQ);
     if keys.just_pressed(KeyCode::Space) {
         let now = time.elapsed_secs();
         if mode.0 == GameMode::Creative && now - input.last_space < 0.3 {
@@ -133,11 +140,16 @@ pub fn physics_step(
     time: Res<Time>,
     world: Res<World>,
     input: Res<MoveInput>,
+    state: Res<crate::survival::PlayerState>,
     mut q: Single<(&mut Player, &mut WorldPos)>,
 ) {
     let dt = time.delta_secs_f64();
     let (ref mut p, ref mut wp) = *q;
     wp.prev = wp.pos;
+    p.jumped = false;
+    if state.dead {
+        return;
+    }
     // Sin el chunk de debajo cargado no se simula (evita caer al vacío al aparecer).
     let here = BlockPos::new(wp.pos.x.floor() as i32, 0, wp.pos.z.floor() as i32).chunk();
     if !world.columns.contains_key(&here) {
@@ -147,7 +159,22 @@ pub fn physics_step(
     let fwd = DVec3::new(-sy, 0.0, -cy);
     let right = DVec3::new(cy, 0.0, -sy);
     let wish = fwd * input.dir.y as f64 + right * input.dir.x as f64;
-    if p.flying {
+    p.in_water = survivalforest_sim::swim::in_water(&*world, &Aabb::player(wp.pos));
+    if !p.flying && p.in_water.0 {
+        // Nadar (con impulso para salir a una orilla de un bloque).
+        let (b, v) = survivalforest_sim::swim::swim_step(
+            &*world,
+            Aabb::player(wp.pos),
+            p.vel,
+            wish,
+            input.jump,
+            dt,
+        );
+        wp.pos = b.feet();
+        p.vel = v;
+        p.on_ground = false;
+        return;
+    } else if p.flying {
         let speed = if input.sprint {
             FLY_SPRINT_SPEED
         } else {
@@ -176,6 +203,7 @@ pub fn physics_step(
         p.vel.y = p.vel.y.max(-60.0);
         if input.jump && p.on_ground {
             p.vel.y = JUMP_SPEED;
+            p.jumped = true;
         }
     }
     let (b, moved, ground) = move_and_collide(&*world, Aabb::player(wp.pos), p.vel * dt);
@@ -219,8 +247,13 @@ pub fn place_camera(
 pub fn grab_cursor(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    ui: Res<crate::interact::UiOpen>,
     mut cursor: Single<&mut CursorOptions>,
 ) {
+    // Con una pantalla abierta el ratón queda libre para las casillas.
+    if ui.0 {
+        return;
+    }
     if mouse.just_pressed(MouseButton::Left) && !mouse_captured(&cursor) {
         cursor.grab_mode = CursorGrabMode::Locked;
         cursor.visible = false;

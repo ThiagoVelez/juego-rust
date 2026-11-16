@@ -7,7 +7,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use survivalforest_core::GameMode;
 
-pub const META_VERSION: u32 = 1;
+/// 1: etapa 1. 2: etapa 2 (supervivencia; los datos nuevos van en archivos aparte).
+pub const META_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WorldMeta {
@@ -48,13 +49,13 @@ pub fn worlds_dir() -> PathBuf {
     data_dir().join("saves")
 }
 
-fn ron_write<T: Serialize>(path: &Path, v: &T) -> io::Result<()> {
+pub fn ron_write<T: Serialize>(path: &Path, v: &T) -> io::Result<()> {
     let text = ron::ser::to_string_pretty(v, ron::ser::PrettyConfig::default())
         .map_err(io::Error::other)?;
     write_atomic(path, text.as_bytes())
 }
 
-fn ron_read<T: for<'de> Deserialize<'de>>(path: &Path) -> io::Result<T> {
+pub fn ron_read<T: for<'de> Deserialize<'de>>(path: &Path) -> io::Result<T> {
     let text = fs::read_to_string(path)?;
     ron::from_str(&text).map_err(io::Error::other)
 }
@@ -127,8 +128,13 @@ pub fn load_meta(dir: &Path) -> io::Result<WorldMeta> {
     ron_read(&dir.join("world.ron"))
 }
 
+/// Guarda los datos del mundo (siempre con la versión actual).
 pub fn save_meta(dir: &Path, m: &WorldMeta) -> io::Result<()> {
-    ron_write(&dir.join("world.ron"), m)
+    let m = WorldMeta {
+        version: META_VERSION,
+        ..m.clone()
+    };
+    ron_write(&dir.join("world.ron"), &m)
 }
 
 pub fn load_player(dir: &Path) -> io::Result<PlayerSave> {
@@ -164,6 +170,20 @@ mod tests {
         };
         save_player(&dir, &p).unwrap();
         assert_eq!(load_player(&dir).unwrap(), p);
+    }
+
+    #[test]
+    fn stage1_meta_version_1_loads_and_saves_as_2() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(
+            d.path().join("world.ron"),
+            r#"(version: 1, name: "Viejo", seed: 5, mode: Survival, time_ticks: 9, created: "1")"#,
+        )
+        .unwrap();
+        let m = load_meta(d.path()).unwrap();
+        assert_eq!((m.version, m.seed), (1, 5));
+        save_meta(d.path(), &m).unwrap();
+        assert_eq!(load_meta(d.path()).unwrap().version, 2);
     }
 
     #[test]

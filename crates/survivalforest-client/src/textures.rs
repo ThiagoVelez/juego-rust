@@ -7,9 +7,9 @@ use survivalforest_core::block::TILE_NAMES;
 pub const T: usize = 32;
 pub type Tile = Vec<u8>;
 
-type C = [f32; 4];
+pub(crate) type C = [f32; 4];
 
-fn hex(h: &str) -> [f32; 3] {
+pub(crate) fn hex(h: &str) -> [f32; 3] {
     let v = u32::from_str_radix(h.trim_start_matches('#'), 16).unwrap_or(0);
     [
         ((v >> 16) & 255) as f32,
@@ -18,15 +18,15 @@ fn hex(h: &str) -> [f32; 3] {
     ]
 }
 
-fn rgba(c: [f32; 3]) -> C {
+pub(crate) fn rgba(c: [f32; 3]) -> C {
     [c[0], c[1], c[2], 255.0]
 }
 
-fn shade(c: [f32; 3], k: f32) -> [f32; 3] {
+pub(crate) fn shade(c: [f32; 3], k: f32) -> [f32; 3] {
     [c[0] * k, c[1] * k, c[2] * k]
 }
 
-fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+pub(crate) fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
     [
         a[0] + (b[0] - a[0]) * t,
         a[1] + (b[1] - a[1]) * t,
@@ -35,7 +35,7 @@ fn mix3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
 }
 
 /// Hash entero → 0..1 (determinista).
-fn h(x: i32, y: i32, s: u32) -> f32 {
+pub(crate) fn h(x: i32, y: i32, s: u32) -> f32 {
     let mut n = (x as u32).wrapping_mul(374_761_393)
         ^ (y as u32).wrapping_mul(668_265_263)
         ^ s.wrapping_mul(2_246_822_519);
@@ -44,7 +44,7 @@ fn h(x: i32, y: i32, s: u32) -> f32 {
 }
 
 /// Ruido de valor que se repite cada `T` píxeles (las texturas encajan entre bloques).
-fn vn(x: f32, y: f32, cell: f32, s: u32) -> f32 {
+pub(crate) fn vn(x: f32, y: f32, cell: f32, s: u32) -> f32 {
     let period = (T as f32 / cell).round() as i32;
     let (fx, fy) = (x / cell, y / cell);
     let (ix, iy) = (fx.floor() as i32, fy.floor() as i32);
@@ -57,7 +57,7 @@ fn vn(x: f32, y: f32, cell: f32, s: u32) -> f32 {
 }
 
 /// Ruido de dos octavas (0..1).
-fn fbm(x: f32, y: f32, s: u32) -> f32 {
+pub(crate) fn fbm(x: f32, y: f32, s: u32) -> f32 {
     vn(x, y, 8.0, s) * 0.65 + vn(x, y, 4.0, s + 7) * 0.35
 }
 
@@ -71,7 +71,7 @@ pub fn paint_tiles() -> Vec<Tile> {
 }
 
 /// Distancia al centro de la celda más cercana de un patrón de puntos (Voronoi simple).
-fn cells(x: f32, y: f32, size: f32, s: u32) -> (f32, f32, (i32, i32)) {
+pub(crate) fn cells(x: f32, y: f32, size: f32, s: u32) -> (f32, f32, (i32, i32)) {
     let period = (T as f32 / size).round() as i32;
     let (cx, cy) = ((x / size).floor() as i32, (y / size).floor() as i32);
     let (mut d1, mut d2, mut id) = (9.0f32, 9.0f32, (0, 0));
@@ -94,7 +94,7 @@ fn cells(x: f32, y: f32, size: f32, s: u32) -> (f32, f32, (i32, i32)) {
     (d1, d2, id)
 }
 
-fn soil(x: f32, y: f32, s: u32) -> [f32; 3] {
+pub(crate) fn soil(x: f32, y: f32, s: u32) -> [f32; 3] {
     let n = fbm(x, y, s);
     let mut c = mix3(hex("#9c4429"), hex("#c0603a"), n);
     let (d1, _, id) = cells(x, y, 6.0, s + 3);
@@ -104,7 +104,7 @@ fn soil(x: f32, y: f32, s: u32) -> [f32; 3] {
     c
 }
 
-fn stone_px(x: f32, y: f32, s: u32) -> [f32; 3] {
+pub(crate) fn stone_px(x: f32, y: f32, s: u32) -> [f32; 3] {
     let (d1, d2, id) = cells(x, y, 9.0, s);
     let base = mix3(hex("#8a8378"), hex("#aaa398"), h(id.0, id.1, s + 2));
     let mut c = shade(base, 0.92 + fbm(x, y, s + 5) * 0.16);
@@ -121,7 +121,17 @@ fn paint(name: &str, s: u32) -> Tile {
     let mut out = vec![0u8; T * T * 4];
     let bevel_on = !matches!(
         name,
-        "water" | "leaves" | "coffee_bush" | "torch" | "frailejon" | "ice" | "bamboo"
+        "water"
+            | "leaves"
+            | "coffee_bush"
+            | "torch"
+            | "frailejon"
+            | "ice"
+            | "bamboo"
+            | "glass"
+            | "platanera"
+            | "blackberry_bush"
+            | "guava_leaves"
     );
     for y in 0..T {
         for x in 0..T {
@@ -394,6 +404,178 @@ fn paint(name: &str, s: u32) -> Tile {
                         [0.0; 4]
                     }
                 }
+                "crafting_table_top" => {
+                    // Tablero de guadua con rejilla tallada de 3×3 y marcas de herramientas.
+                    let grain = (fy * 0.4 + vn(fx, fy, 6.0, s) * 3.0).sin() * 0.5 + 0.5;
+                    let mut c = mix3(hex("#b17a43"), hex("#cf9a5f"), grain * 0.6 + n * 0.4);
+                    let gx = (x as i32 - 4).rem_euclid(8);
+                    let gy = (y as i32 - 4).rem_euclid(8);
+                    if (4..28).contains(&x) && (4..28).contains(&y) && (gx == 0 || gy == 0) {
+                        c = hex("#6e4524");
+                    }
+                    rgba(c)
+                }
+                "crafting_table_side" => {
+                    let mut c = mix3(hex("#a26d3a"), hex("#c48a51"), n);
+                    if y % 10 == 9 {
+                        c = hex("#6e4524");
+                    }
+                    // Serrucho y martillo colgados.
+                    let saw = (7..15).contains(&x) && (12..15).contains(&y);
+                    let teeth = (7..15).contains(&x) && y == 15 && x % 2 == 0;
+                    let handle = (20..22).contains(&x) && (10..22).contains(&y);
+                    let head = (17..25).contains(&x) && (8..11).contains(&y);
+                    if saw || teeth {
+                        c = hex("#c9c4bc");
+                    } else if head {
+                        c = hex("#5a5550");
+                    } else if handle {
+                        c = hex("#5a3a22");
+                    }
+                    rgba(c)
+                }
+                "furnace_top" => {
+                    let (d1, d2, _) = cells(fx, fy, 6.0, s);
+                    let mut c = mix3(hex("#9a5a3a"), hex("#b8744e"), n);
+                    if d2 - d1 < 0.08 {
+                        c = shade(c, 0.7);
+                    }
+                    rgba(c)
+                }
+                "furnace_side" | "furnace_side_lit" => {
+                    // Adobe rojizo con boca de horno en arco.
+                    let mut c = mix3(hex("#a65d3c"), hex("#c27650"), n);
+                    if y % 8 == 7 || (x + (y / 8) * 5) % 12 == 0 {
+                        c = shade(c, 0.78);
+                    }
+                    let (dx, dy) = (fx - 16.0, fy - 22.0);
+                    let mouth = dy > -6.0
+                        && dx.abs() < 7.0
+                        && (dy > 0.0 || dx * dx + dy * dy < 49.0)
+                        && fy < 28.0;
+                    if mouth {
+                        c = if name == "furnace_side_lit" {
+                            mix3(
+                                hex("#ffd36a"),
+                                hex("#ff6a1a"),
+                                (fy - 16.0).max(0.0) / 12.0 + r * 0.2,
+                            )
+                        } else {
+                            mix3(hex("#1e1512"), hex("#3a2a22"), n)
+                        };
+                    }
+                    rgba(c)
+                }
+                "chest_top" | "chest_side" => {
+                    let mut c = mix3(hex("#6e4524"), hex("#8a5a32"), n);
+                    if y % 8 == 7 {
+                        c = hex("#4a2e18");
+                    }
+                    // Fleje y cierre de cobre.
+                    if name == "chest_side" && (13..19).contains(&y) {
+                        c = mix3(hex("#b9602c"), hex("#e08a4a"), n);
+                    }
+                    if name == "chest_side" && (14..19).contains(&x) && (12..20).contains(&y) {
+                        c = hex("#d9a91f");
+                    }
+                    if name == "chest_top" && (x == 4 || x == 27) {
+                        c = mix3(hex("#b9602c"), hex("#e08a4a"), n);
+                    }
+                    rgba(c)
+                }
+                "grindstone_top" => {
+                    let d = ((fx - 16.0).powi(2) + (fy - 16.0).powi(2)).sqrt();
+                    let c = if d < 12.0 {
+                        shade(stone_px(fx, fy, s), if d > 10.0 { 0.75 } else { 1.0 })
+                    } else {
+                        mix3(hex("#a26d3a"), hex("#c48a51"), n)
+                    };
+                    rgba(c)
+                }
+                "grindstone_side" => {
+                    let d = ((fx - 16.0).powi(2) + (fy - 14.0).powi(2)).sqrt();
+                    let c = if d < 11.0 {
+                        let ring = (d * 1.4).sin() * 0.06 + 1.0;
+                        shade(mix3(hex("#8a8378"), hex("#b3ab9e"), n), ring)
+                    } else if fy > 24.0 || !(4..=27).contains(&x) {
+                        mix3(hex("#7a4e2b"), hex("#9a6a3a"), n)
+                    } else {
+                        hex("#2b2724")
+                    };
+                    rgba(c)
+                }
+                "cobble" => {
+                    let (d1, d2, id) = cells(fx, fy, 6.0, s);
+                    let base = mix3(hex("#7d776d"), hex("#a39c90"), h(id.0, id.1, s + 2));
+                    let mut c = shade(base, 0.9 + n * 0.2);
+                    if d2 - d1 < 0.12 {
+                        c = hex("#4a4540");
+                    }
+                    rgba(c)
+                }
+                "bricks" => {
+                    let row = y / 8;
+                    let off = if row % 2 == 1 { 8 } else { 0 };
+                    let mut c = mix3(
+                        hex("#a8442b"),
+                        hex("#c45a3a"),
+                        n * 0.6 + h(((x + off) / 16) as i32, row as i32, s) * 0.4,
+                    );
+                    if y % 8 == 7 || (x + off) % 16 == 15 {
+                        c = mix3(hex("#d8cfc0"), hex("#b8ae9e"), n);
+                    }
+                    rgba(c)
+                }
+                "glass" => {
+                    let e = x.min(y).min(T - 1 - x).min(T - 1 - y);
+                    let glint = (x as i32 - y as i32).abs() < 2 && (6..14).contains(&x);
+                    if e < 2 {
+                        rgba(mix3(hex("#cfe6ea"), hex("#9cc4cc"), n))
+                    } else if glint {
+                        [235.0, 250.0, 255.0, 220.0]
+                    } else {
+                        [0.0; 4]
+                    }
+                }
+                "platanera" => {
+                    // Hojas anchas con nervio y un racimo de plátanos verdes.
+                    let leaf = ((fx - 16.0) / 12.0).powi(2) + ((fy - 12.0) / 11.0).powi(2) < 1.0
+                        && vn(fx, fy, 5.0, s) > 0.28;
+                    let bunch = ((fx - 18.0) / 4.0).powi(2) + ((fy - 22.0) / 5.0).powi(2) < 1.0;
+                    let stem = (15..17).contains(&x) && y > 18;
+                    if bunch {
+                        rgba(mix3(hex("#8fb83a"), hex("#d4d24a"), n))
+                    } else if stem {
+                        rgba(hex("#5e7a2a"))
+                    } else if leaf {
+                        let mut c = mix3(hex("#3c8f45"), hex("#6fb84a"), n);
+                        if (fx - 16.0).abs() < 0.8 {
+                            c = hex("#cfd98a");
+                        }
+                        rgba(c)
+                    } else {
+                        [0.0; 4]
+                    }
+                }
+                "blackberry_bush" | "guava_leaves" => {
+                    let (d1, _, id) = cells(fx, fy, 5.0, s);
+                    let hole = h(id.0, id.1, s + 3) < 0.18 && d1 > 0.35;
+                    if hole {
+                        [0.0; 4]
+                    } else {
+                        let fruit = d1 < 0.22 && h(id.0, id.1, s + 7) > 0.62;
+                        let c = if fruit && name == "blackberry_bush" {
+                            mix3(hex("#2a0f2e"), hex("#6a2a6e"), n)
+                        } else if fruit {
+                            mix3(hex("#c9d44a"), hex("#f0e27a"), n)
+                        } else if name == "blackberry_bush" {
+                            mix3(hex("#2c5a2a"), hex("#4a7a3a"), n)
+                        } else {
+                            mix3(hex("#4f9a3c"), hex("#7cc05a"), n)
+                        };
+                        rgba(shade(c, 0.9 + (1.0 - d1) * 0.15))
+                    }
+                }
                 _ => [255.0, 0.0, 255.0, 255.0],
             };
             let mut c = c;
@@ -459,6 +641,18 @@ mod tests {
         let alpha = |tile: &Tile| tile.chunks(4).filter(|p| p[3] < 128).count();
         assert!(alpha(&t[idx("leaves")]) > 0);
         assert_eq!(alpha(&t[idx("stone")]), 0);
+    }
+
+    #[test]
+    fn every_tile_name_paints() {
+        // Ninguna textura se queda con el color de «falta textura» (magenta).
+        for (i, t) in paint_tiles().iter().enumerate() {
+            let magenta = t
+                .chunks(4)
+                .filter(|p| p[0] > 200 && p[1] < 40 && p[2] > 200)
+                .count();
+            assert!(magenta < 100, "{} sin pintar", TILE_NAMES[i]);
+        }
     }
 
     #[test]

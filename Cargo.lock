@@ -5196,7 +5196,7 @@ checksum = "6637bab7722d379c8b41ba849228d680cc12d0a45ba1fa2b48f2a30577a06731"
 
 [[package]]
 name = "survivalforest-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bevy",
  "ron",
@@ -5208,14 +5208,15 @@ dependencies = [
 
 [[package]]
 name = "survivalforest-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "ron",
  "serde",
 ]
 
 [[package]]
 name = "survivalforest-release"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5225,16 +5226,19 @@ dependencies = [
 
 [[package]]
 name = "survivalforest-sim"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "glam",
+ "ron",
+ "serde",
  "survivalforest-core",
  "survivalforest-world",
+ "tempfile",
 ]
 
 [[package]]
 name = "survivalforest-world"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "log",
  "lz4_flex",

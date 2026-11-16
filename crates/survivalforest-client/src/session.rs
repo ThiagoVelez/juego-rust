@@ -33,6 +33,20 @@ pub struct PendingWorld(pub PathBuf);
 #[derive(Component)]
 pub struct MenuCamera;
 
+/// ¿Se puede aparecer en este bioma? Se evitan el agua y los biomas sin árboles ni comida
+/// (para empezar con las manos vacías en supervivencia).
+pub fn spawn_biome_ok(b: Biome) -> bool {
+    !matches!(
+        b,
+        Biome::Ocean
+            | Biome::Coast
+            | Biome::Mangrove
+            | Biome::RedDesert
+            | Biome::SnowPeak
+            | Biome::Paramo
+    )
+}
+
 /// Primer lugar seco cerca de (0, 0): bloque sólido debajo y dos de aire encima.
 pub fn spawn_point(g: &WorldGen) -> BlockPos {
     for c in spiral(ChunkPos::new(0, 0), 64) {
@@ -40,7 +54,7 @@ pub fn spawn_point(g: &WorldGen) -> BlockPos {
         let (cx, cz) = (o.x + 8, o.z + 8);
         let h = g.surface_height(cx, cz);
         let b = g.biome_at(cx, cz);
-        if h <= SEA_LEVEL + 1 || matches!(b, Biome::Ocean | Biome::Coast | Biome::Mangrove) {
+        if h <= SEA_LEVEL + 1 || !spawn_biome_ok(b) {
             continue;
         }
         let col = g.generate(c);
@@ -58,6 +72,10 @@ pub fn spawn_point(g: &WorldGen) -> BlockPos {
                     ))
                 };
                 let ground = at(0);
+                let (wx, wz) = (o.x + lx as i32, o.z + lz as i32);
+                if !spawn_biome_ok(g.biome_at(wx, wz)) {
+                    continue;
+                }
                 if ground.def().solid
                     && ground != LEAVES
                     && ground != WATER
@@ -132,6 +150,20 @@ pub fn enter_world(
         flying,
         settings.fov,
     );
+    // Supervivencia: inventario, vida y experiencia; baúles, hornos y objetos cercanos.
+    let mut state =
+        crate::survival::PlayerState::from_save(survivalforest_sim::persist::load_survival(&dir));
+    if state.spawn.is_none() {
+        let p = spawn_point(&gen_);
+        state.spawn = Some([p.x, p.y, p.z]);
+    }
+    if meta.mode == survivalforest_core::GameMode::Creative {
+        crate::interact::creative_start_bar(&mut state);
+    }
+    let mut extras = crate::survival::WorldExtras::default();
+    crate::survival::load_nearby_regions(&dir, &mut extras, feet);
+    commands.insert_resource(state);
+    commands.insert_resource(extras);
     commands.insert_resource(World {
         gen_,
         columns: Default::default(),
@@ -165,9 +197,28 @@ pub fn finish_loading(
     }
 }
 
-/// Guarda chunks, hora y jugador.
-pub fn save_world(world: &mut World, player: Option<(&Player, &WorldPos)>) {
+/// Guarda chunks, hora, jugador y lo de la supervivencia.
+pub fn save_world(
+    world: &mut World,
+    player: Option<(&Player, &WorldPos)>,
+    surv: Option<(&crate::survival::PlayerState, &crate::survival::WorldExtras)>,
+) {
     world.save_all();
+    if let Some((st, ex)) = surv {
+        if let Err(e) = survivalforest_sim::persist::save_survival(&world.dir, &st.to_save()) {
+            warn!("No se pudo guardar el inventario: {e}");
+        }
+        let mut regions = survivalforest_sim::persist::regions_in(&ex.be, &ex.items);
+        regions.extend(ex.loaded.iter().copied());
+        // Una región cuyo archivo no se pudo leer no se reescribe (se conserva el original).
+        for r in regions.into_iter().filter(|r| !ex.failed.contains(r)) {
+            if let Err(e) =
+                survivalforest_sim::persist::save_extras(&world.dir, r, &ex.be, &ex.items)
+            {
+                warn!("No se pudieron guardar los baúles y objetos: {e}");
+            }
+        }
+    }
     if let Err(e) = save_meta(&world.dir, &world.meta) {
         warn!("No se pudo guardar el mundo: {e}");
     }
@@ -188,13 +239,17 @@ pub fn autosave(
     time: Res<Time>,
     mut last: Local<f32>,
     mut world: ResMut<World>,
+    st: Res<crate::survival::PlayerState>,
+    ex: Res<crate::survival::WorldExtras>,
+    ss: Res<crate::screens::ScreenState>,
     q: Single<(&Player, &WorldPos)>,
 ) {
     let now = time.elapsed_secs();
     if now - *last >= 60.0 {
         *last = now;
         let (p, wp) = *q;
-        save_world(&mut world, Some((p, wp)));
+        let (st, ex) = crate::screens::save_snapshot(&ss, &st, &ex, wp.pos);
+        save_world(&mut world, Some((p, wp)), Some((&st, &ex)));
         info!("Mundo guardado");
     }
 }
@@ -203,13 +258,22 @@ pub fn autosave(
 pub fn save_on_exit(
     mut exits: MessageReader<AppExit>,
     world: Option<ResMut<World>>,
+    st: Option<Res<crate::survival::PlayerState>>,
+    ex: Option<Res<crate::survival::WorldExtras>>,
+    ss: Option<Res<crate::screens::ScreenState>>,
     q: Query<(&Player, &WorldPos)>,
 ) {
     if exits.read().next().is_none() {
         return;
     }
     if let Some(mut w) = world {
-        save_world(&mut w, q.iter().next());
+        let player = q.iter().next();
+        let feet = player.map(|(_, wp)| wp.pos).unwrap_or_default();
+        let snap = match (st.as_deref(), ex.as_deref(), ss.as_deref()) {
+            (Some(st), Some(ex), Some(ss)) => Some(crate::screens::save_snapshot(ss, st, ex, feet)),
+            _ => None,
+        };
+        save_world(&mut w, player, snap.as_ref().map(|(a, b)| (a, b)));
     }
 }
 
@@ -219,9 +283,15 @@ pub fn leave_world(
     q: Query<(Entity, &Player, &WorldPos)>,
     chunks: Query<Entity, With<ChunkMesh>>,
     mut st: ResMut<Streaming>,
+    ps: Option<Res<crate::survival::PlayerState>>,
+    ex: Option<Res<crate::survival::WorldExtras>>,
 ) {
     let player = q.iter().next();
-    save_world(&mut world, player.map(|(_, p, wp)| (p, wp)));
+    save_world(
+        &mut world,
+        player.map(|(_, p, wp)| (p, wp)),
+        ps.as_deref().zip(ex.as_deref()),
+    );
     if let Some((e, _, _)) = player {
         commands.entity(e).despawn();
     }
@@ -237,10 +307,13 @@ pub fn leave_world(
 pub fn toggle_pause(
     keys: Res<ButtonInput<KeyCode>>,
     state: Res<State<AppState>>,
+    ui: Res<crate::interact::UiOpen>,
+    esc: Res<crate::screens::EscConsumed>,
     mut next: ResMut<NextState<AppState>>,
     mut cursor: Single<&mut CursorOptions>,
 ) {
-    if !keys.just_pressed(KeyCode::Escape) {
+    // Con una pantalla abierta, Esc la cierra (no abre la pausa).
+    if !keys.just_pressed(KeyCode::Escape) || ui.0 || esc.0 {
         return;
     }
     match state.get() {
@@ -262,6 +335,34 @@ pub fn toggle_pause(
 mod tests {
     use super::*;
     use survivalforest_core::block::AIR;
+
+    #[test]
+    fn spawn_point_avoids_barren_biomes() {
+        for b in [
+            Biome::RedDesert,
+            Biome::SnowPeak,
+            Biome::Paramo,
+            Biome::Ocean,
+            Biome::Coast,
+            Biome::Mangrove,
+        ] {
+            assert!(!spawn_biome_ok(b), "{b:?}");
+        }
+        for b in [
+            Biome::CoffeeMountain,
+            Biome::Rainforest,
+            Biome::Savanna,
+            Biome::BambooValley,
+            Biome::CloudForest,
+        ] {
+            assert!(spawn_biome_ok(b), "{b:?}");
+        }
+        for seed in 0..60u64 {
+            let g = WorldGen::new(seed * 7919 + 3);
+            let p = spawn_point(&g);
+            assert!(spawn_biome_ok(g.biome_at(p.x, p.z)), "semilla {seed}");
+        }
+    }
 
     #[test]
     fn spawn_point_is_dry_land() {
