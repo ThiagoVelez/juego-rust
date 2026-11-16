@@ -52,6 +52,21 @@ pub const TILE_NAMES: &[&str] = &[
     "torch",
     "bedrock_floor",
     "snow_side",
+    "crafting_table_top",
+    "crafting_table_side",
+    "furnace_top",
+    "furnace_side",
+    "furnace_side_lit",
+    "chest_top",
+    "chest_side",
+    "grindstone_top",
+    "grindstone_side",
+    "cobble",
+    "bricks",
+    "glass",
+    "platanera",
+    "blackberry_bush",
+    "guava_leaves",
 ];
 
 const fn t(name: &str) -> u16 {
@@ -117,6 +132,17 @@ blocks! {
     GOLD_ORE = 24, "gold_ore", "Oro", op=true, so=true, br=true, li=0, tex=["gold_ore", "gold_ore", "gold_ore"];
     QUARTZ_ORE = 25, "quartz_ore", "Cuarzo", op=true, so=true, br=true, li=0, tex=["quartz_ore", "quartz_ore", "quartz_ore"];
     TORCH = 26, "torch", "Antorcha", op=false, so=false, br=true, li=14, tex=["torch", "torch", "torch"];
+    CRAFTING_TABLE = 27, "crafting_table", "Mesa de trabajo", op=true, so=true, br=true, li=0, tex=["crafting_table_top", "crafting_table_side", "planks"];
+    FURNACE = 28, "furnace", "Horno de barro", op=true, so=true, br=true, li=0, tex=["furnace_top", "furnace_side", "furnace_top"];
+    FURNACE_LIT = 29, "furnace_lit", "Horno de barro encendido", op=true, so=true, br=true, li=13, tex=["furnace_top", "furnace_side_lit", "furnace_top"];
+    CHEST = 30, "chest", "Baúl", op=true, so=true, br=true, li=0, tex=["chest_top", "chest_side", "chest_top"];
+    GRINDSTONE = 31, "grindstone", "Piedra de amolar", op=true, so=true, br=true, li=0, tex=["grindstone_top", "grindstone_side", "stone"];
+    COBBLE = 32, "cobble", "Piedra partida", op=true, so=true, br=true, li=0, tex=["cobble", "cobble", "cobble"];
+    BRICKS = 33, "bricks", "Bloque de ladrillo", op=true, so=true, br=true, li=0, tex=["bricks", "bricks", "bricks"];
+    GLASS = 34, "glass", "Vidrio", op=false, so=true, br=true, li=0, tex=["glass", "glass", "glass"];
+    PLATANERA = 35, "platanera", "Platanera", op=false, so=false, br=true, li=0, tex=["platanera", "platanera", "platanera"];
+    BLACKBERRY_BUSH = 36, "blackberry_bush", "Arbusto de mora", op=false, so=true, br=true, li=0, tex=["blackberry_bush", "blackberry_bush", "blackberry_bush"];
+    GUAVA_LEAVES = 37, "guava_leaves", "Hojas de guayabo", op=false, so=true, br=true, li=0, tex=["guava_leaves", "guava_leaves", "guava_leaves"];
 }
 
 pub fn blocks() -> &'static [BlockDef] {
@@ -167,13 +193,27 @@ mod tests {
             "bamboo",
             "frailejon",
             "torch",
+            "glass",
+            "platanera",
+            "blackberry_bush",
+            "guava_leaves",
         ] {
             assert!(!block(by_key(k).unwrap()).opaque, "{k}");
         }
-        for k in ["air", "water", "torch"] {
+        for k in ["air", "water", "torch", "platanera"] {
             assert!(!block(by_key(k).unwrap()).solid, "{k}");
         }
         assert!(block(STONE).opaque && block(STONE).solid);
+    }
+
+    #[test]
+    fn new_block_ids_appended() {
+        assert_eq!(STONE.0, 2);
+        assert_eq!(TORCH.0, 26);
+        assert_eq!(CRAFTING_TABLE.0, 27);
+        assert_eq!(GUAVA_LEAVES.0, 37);
+        assert_eq!(block(FURNACE_LIT).emits_light, 13);
+        assert!(block(GLASS).solid && block(BLACKBERRY_BUSH).solid);
     }
 
     #[test]

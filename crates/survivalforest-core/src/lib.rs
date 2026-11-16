@@ -2,6 +2,7 @@
 
 pub mod block;
 pub mod coords;
+pub mod item;
 pub mod mode;
 
 pub use block::{BlockDef, BlockId, TILE_NAMES, block, blocks, by_key};
