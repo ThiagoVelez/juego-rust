@@ -1,7 +1,10 @@
 //! Reglas del juego sin gráficos: física, rayos, edición y tiempo.
 
 pub mod action;
+pub mod containers;
 pub mod crafting;
+pub mod death;
+pub mod drops;
 pub mod edit;
 pub mod furnace;
 pub mod grindstone;

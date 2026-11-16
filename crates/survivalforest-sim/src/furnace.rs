@@ -32,6 +32,9 @@ pub struct Furnace {
     /// Segundos de la fundición en curso.
     pub progress: f32,
     pub xp_stored: f32,
+    /// Encendido en el último tick (para cambiar el bloque).
+    #[serde(default)]
+    pub lit: bool,
 }
 
 impl Furnace {

@@ -7,5 +7,5 @@ license.workspace = true
 [dependencies]
 survivalforest-core = { path = "../survivalforest-core" }
 survivalforest-world = { path = "../survivalforest-world" }
-glam = "0.33"
+glam = { version = "0.33", features = ["serde"] }
 serde.workspace = true
