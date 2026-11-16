@@ -8,3 +8,4 @@ license.workspace = true
 survivalforest-core = { path = "../survivalforest-core" }
 survivalforest-world = { path = "../survivalforest-world" }
 glam = "0.33"
+serde.workspace = true
