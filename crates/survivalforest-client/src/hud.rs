@@ -10,10 +10,12 @@ use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::image::ImageSampler;
 use bevy::prelude::*;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+use survivalforest_core::item::{ItemId, items};
 use survivalforest_core::{BlockPos, GameMode};
 
+/// Icono de cada objeto: los bloques usan su textura de lado; el resto, su icono pintado.
 #[derive(Resource)]
-pub struct BlockIcons(pub Vec<Handle<Image>>);
+pub struct ItemIcons(pub std::collections::HashMap<ItemId, Handle<Image>>);
 
 #[derive(Component)]
 pub struct HudRoot;
@@ -27,29 +29,42 @@ pub struct DebugText;
 #[derive(Resource, Default)]
 pub struct ShowDebug(pub bool);
 
-pub fn setup_icons(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
-    let icons = paint_tiles()
-        .into_iter()
-        .map(|t| {
-            let mut img = Image::new(
-                Extent3d {
-                    width: T as u32,
-                    height: T as u32,
-                    depth_or_array_layers: 1,
-                },
-                TextureDimension::D2,
-                t,
-                TextureFormat::Rgba8UnormSrgb,
-                RenderAssetUsages::RENDER_WORLD,
-            );
-            img.sampler = ImageSampler::nearest();
-            images.add(img)
-        })
-        .collect();
-    commands.insert_resource(BlockIcons(icons));
+fn icon_image(t: Vec<u8>) -> Image {
+    let mut img = Image::new(
+        Extent3d {
+            width: T as u32,
+            height: T as u32,
+            depth_or_array_layers: 1,
+        },
+        TextureDimension::D2,
+        t,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    img.sampler = ImageSampler::nearest();
+    img
 }
 
-pub fn spawn_hud(mut commands: Commands, icons: Res<BlockIcons>, mode: Res<Mode>) {
+pub fn setup_icons(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
+    let icons: Vec<Handle<Image>> = paint_tiles()
+        .into_iter()
+        .map(|t| images.add(icon_image(t)))
+        .collect();
+    let mut by_item = std::collections::HashMap::new();
+    for it in items() {
+        let h = match it.places {
+            Some(b) => icons[b.def().tex[1] as usize].clone(),
+            None => match crate::icons::item_icon(&it.key) {
+                Some(t) => images.add(icon_image(t)),
+                None => continue,
+            },
+        };
+        by_item.insert(it.id, h);
+    }
+    commands.insert_resource(ItemIcons(by_item));
+}
+
+pub fn spawn_hud(mut commands: Commands, icons: Res<ItemIcons>, mode: Res<Mode>) {
     commands
         .spawn((
             HudRoot,
@@ -110,7 +125,10 @@ pub fn spawn_hud(mut commands: Commands, icons: Res<BlockIcons>, mode: Res<Mode>
                 ))
                 .with_children(|bar| {
                     for (i, b) in BUILD_BLOCKS.iter().enumerate() {
-                        let tex = b.def().tex[1] as usize;
+                        let icon = survivalforest_core::item::item_for_block(*b)
+                            .and_then(|it| icons.0.get(&it))
+                            .cloned()
+                            .unwrap_or_default();
                         bar.spawn((
                             Slot(i),
                             Node {
@@ -125,7 +143,7 @@ pub fn spawn_hud(mut commands: Commands, icons: Res<BlockIcons>, mode: Res<Mode>
                             BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.18)),
                         ))
                         .with_child((
-                            ImageNode::new(icons.0[tex].clone()),
+                            ImageNode::new(icon),
                             Node {
                                 width: px(28),
                                 height: px(28),

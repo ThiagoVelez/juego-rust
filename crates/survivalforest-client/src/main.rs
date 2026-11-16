@@ -8,6 +8,7 @@
 )]
 
 mod hud;
+mod icons;
 mod interact;
 mod menu;
 mod player;
