@@ -298,10 +298,13 @@ pub fn leave_world(
 pub fn toggle_pause(
     keys: Res<ButtonInput<KeyCode>>,
     state: Res<State<AppState>>,
+    ui: Res<crate::interact::UiOpen>,
+    esc: Res<crate::screens::EscConsumed>,
     mut next: ResMut<NextState<AppState>>,
     mut cursor: Single<&mut CursorOptions>,
 ) {
-    if !keys.just_pressed(KeyCode::Escape) {
+    // Con una pantalla abierta, Esc la cierra (no abre la pausa).
+    if !keys.just_pressed(KeyCode::Escape) || ui.0 || esc.0 {
         return;
     }
     match state.get() {

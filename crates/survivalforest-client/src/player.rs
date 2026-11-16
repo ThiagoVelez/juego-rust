@@ -235,8 +235,13 @@ pub fn place_camera(
 pub fn grab_cursor(
     mouse: Res<ButtonInput<MouseButton>>,
     keys: Res<ButtonInput<KeyCode>>,
+    ui: Res<crate::interact::UiOpen>,
     mut cursor: Single<&mut CursorOptions>,
 ) {
+    // Con una pantalla abierta el ratón queda libre para las casillas.
+    if ui.0 {
+        return;
+    }
     if mouse.just_pressed(MouseButton::Left) && !mouse_captured(&cursor) {
         cursor.grab_mode = CursorGrabMode::Locked;
         cursor.visible = false;

@@ -14,6 +14,7 @@ mod interact;
 mod menu;
 mod player;
 mod render;
+mod screens;
 mod session;
 mod settings;
 mod sky;
@@ -81,6 +82,9 @@ fn main() {
     .init_resource::<player::MoveInput>()
     .init_resource::<interact::OpenRequest>()
     .init_resource::<interact::UiOpen>()
+    .init_resource::<screens::ScreenState>()
+    .init_resource::<screens::EscConsumed>()
+    .init_resource::<screens::RespawnClicked>()
     .init_resource::<interact::Target>()
     .init_resource::<menu::Screen>()
     .init_resource::<menu::UiAction>()
@@ -94,6 +98,7 @@ fn main() {
         (
             session::leave_world.run_if(resource_exists::<World>),
             drops_view::despawn_drops,
+            screens::reset_screens,
             session::spawn_menu_camera,
             menu::on_enter_menu,
         )
@@ -157,6 +162,11 @@ fn main() {
             interact::draw_outline,
             drops_view::sync_drops,
             hud::update_hud,
+            screens::open_screens,
+            screens::build_screen,
+            screens::slot_clicks,
+            screens::refresh_screen,
+            screens::respawn_button,
             hud::update_debug,
             sky::toggle_fast,
             session::autosave,
@@ -167,9 +177,11 @@ fn main() {
     )
     .add_systems(
         Update,
-        session::toggle_pause.run_if(|s: Res<State<AppState>>| {
-            matches!(s.get(), AppState::InGame | AppState::Paused)
-        }),
+        session::toggle_pause
+            .after(screens::open_screens)
+            .run_if(|s: Res<State<AppState>>| {
+                matches!(s.get(), AppState::InGame | AppState::Paused)
+            }),
     )
     .add_systems(Update, sky::apply_time)
     .add_systems(Last, session::save_on_exit);
@@ -186,7 +198,7 @@ fn main() {
     if let Some(s) = smoke {
         app.insert_resource(Smoke(s))
             .add_systems(Startup, smoke_start)
-            .add_systems(Update, smoke_test);
+            .add_systems(Update, (shot_setup, smoke_test));
     }
     app.run();
 }
@@ -219,6 +231,107 @@ fn smoke_start(mut commands: Commands, mut next: ResMut<NextState<AppState>>) {
     }
     commands.insert_resource(PendingWorld(dir));
     next.set(AppState::Loading);
+}
+
+/// Depuración: `--shot-screen <hud|inventario|mesa|horno|baul|amoladora|muerte|creativo>`
+/// abre esa pantalla con objetos de ejemplo poco antes de la captura de la prueba de humo.
+#[allow(clippy::too_many_arguments)]
+fn shot_setup(
+    time: Res<Time>,
+    smoke: Res<Smoke>,
+    state: Res<State<AppState>>,
+    st: Option<ResMut<survival::PlayerState>>,
+    ex: Option<ResMut<survival::WorldExtras>>,
+    ss: Option<ResMut<screens::ScreenState>>,
+    mut done: Local<bool>,
+) {
+    let Some(name) = arg_after("--shot-screen") else {
+        return;
+    };
+    let (Some(mut st), Some(mut ex), Some(mut ss)) = (st, ex, ss) else {
+        return;
+    };
+    if *done || *state.get() != AppState::InGame || time.elapsed_secs() < smoke.0 - 4.0 {
+        return;
+    }
+    *done = true;
+    use survivalforest_core::item::item_by_key;
+    use survivalforest_sim::containers::BlockEntity;
+    use survivalforest_sim::inventory::ItemStack;
+    let s = |k: &str, n: u16| Some(ItemStack::new(item_by_key(k).expect("objeto"), n));
+    st.inv.slots.0[0] = Some(ItemStack {
+        wear: 40,
+        ..s("pick_stone", 1).expect("pico")
+    });
+    st.inv.slots.0[1] = s("axe_wood", 1);
+    st.inv.slots.0[2] = s("machete_iron", 1);
+    st.inv.slots.0[3] = s("cobble", 48);
+    st.inv.slots.0[4] = s("platano", 5);
+    st.inv.slots.0[5] = s("torch", 16);
+    st.inv.slots.0[10] = s("iron_ingot", 7);
+    st.inv.slots.0[11] = s("coal", 23);
+    st.inv.slots.0[12] = s("mora", 9);
+    st.inv.slots.0[20] = s("planks", 64);
+    st.vitals.health = 13.0;
+    st.vitals.hunger = 15.0;
+    st.vitals.air = 9.0;
+    st.xp.add(40.0);
+    let p = survivalforest_core::BlockPos::new(0, 0, 0);
+    ss.screen = match name.as_str() {
+        "inventario" => {
+            ss.grid[0] = s("log", 2);
+            screens::GameScreen::Inventory
+        }
+        "mesa" => {
+            for (i, k) in [
+                (0, "planks"),
+                (2, "planks"),
+                (3, "planks"),
+                (4, "stick"),
+                (5, "planks"),
+                (7, "stick"),
+            ] {
+                ss.grid[i] = s(k, 1);
+            }
+            screens::GameScreen::Table(p)
+        }
+        "horno" => {
+            ex.be.on_placed(p, survivalforest_core::block::FURNACE);
+            if let Some(BlockEntity::Furnace(f)) = ex.be.0.get_mut(&p) {
+                f.input = s("iron_ore_item", 6);
+                f.fuel = s("coal", 3);
+                f.output = s("iron_ingot", 2);
+                f.burn_left = 30.0;
+                f.burn_total = 64.0;
+                f.progress = 5.0;
+            }
+            screens::GameScreen::Furnace(p)
+        }
+        "baul" => {
+            ex.be.on_placed(p, survivalforest_core::block::CHEST);
+            if let Some(BlockEntity::Chest(c)) = ex.be.0.get_mut(&p) {
+                c.slots.0[0] = s("guayaba", 12);
+                c.slots.0[4] = s("gold_ingot", 3);
+                c.slots.0[13] = s("bricks", 40);
+            }
+            screens::GameScreen::Chest(p)
+        }
+        "amoladora" => {
+            ss.grind = Some(ItemStack {
+                wear: 100,
+                ..s("pick_iron", 1).expect("pico")
+            });
+            screens::GameScreen::Grindstone(p)
+        }
+        "muerte" => {
+            st.vitals.health = 0.0;
+            st.dead = true;
+            st.death_pos = Some(bevy::math::DVec3::new(120.0, 71.0, -35.0));
+            screens::GameScreen::Death
+        }
+        "creativo" => screens::GameScreen::CreativeList,
+        _ => screens::GameScreen::None,
+    };
 }
 
 fn smoke_test(
