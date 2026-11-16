@@ -1,10 +1,14 @@
-//! Vegetación: árboles de copa redonda, guaduales, cafetales y frailejones.
+//! Vegetación: árboles de copa redonda, guaduales, cafetales, frailejones y plantas de comida
+//! (plataneras, arbustos de mora y guayabos).
 
 use super::carve::Rng;
 use super::climate::mix;
 use super::{Biome, SEA_LEVEL, WorldGen};
 use crate::ChunkColumn;
-use survivalforest_core::block::{AIR, BAMBOO, COFFEE_BUSH, FRAILEJON, GRASS, LEAVES, LOG};
+use survivalforest_core::block::{
+    AIR, BAMBOO, BLACKBERRY_BUSH, COFFEE_BUSH, FRAILEJON, GRASS, GUAVA_LEAVES, LEAVES, LOG,
+    PLATANERA,
+};
 use survivalforest_core::{BlockId, LocalPos, MIN_Y};
 
 fn put(col: &mut ChunkColumn, x: i32, y: i32, z: i32, b: BlockId, only_air: bool) {
@@ -37,6 +41,51 @@ fn tree(col: &mut ChunkColumn, x: i32, y: i32, z: i32, rng: &mut Rng) {
                 }
             }
         }
+    }
+}
+
+/// Guayabo: tronco corto y copa pequeña de hojas de guayabo.
+fn guava_tree(col: &mut ChunkColumn, x: i32, y: i32, z: i32) {
+    for t in 1..=3 {
+        put(col, x, y + t, z, LOG, false);
+    }
+    for dy in 3..=5 {
+        let r: i32 = if dy == 5 { 1 } else { 2 };
+        for dz in -r..=r {
+            for dx in -r..=r {
+                if dx * dx + dz * dz <= r * r + 1 {
+                    put(col, x + dx, y + dy, z + dz, GUAVA_LEAVES, true);
+                }
+            }
+        }
+    }
+}
+
+/// Plantas de comida (etapa 2), con su propia semilla para no cambiar el resto del bosque.
+fn food_plant(col: &mut ChunkColumn, wg: &WorldGen, lx: i32, lz: i32, h: i32, biome: Biome) {
+    let o = col.pos.origin();
+    let (wx, wz) = (o.x + lx, o.z + lz);
+    let mut rng = Rng::new(mix(
+        wg.seed ^ 0xF00D_5EED,
+        ((wx as i64 as u64) << 32) ^ (wz as i64 as u64 & 0xFFFF_FFFF),
+    ));
+    let inside = (2..14).contains(&lx) && (2..14).contains(&lz);
+    match biome {
+        Biome::Rainforest | Biome::Coast | Biome::Mangrove if rng.chance(0.012) => {
+            put(col, lx, h + 1, lz, PLATANERA, true);
+            put(col, lx, h + 2, lz, PLATANERA, true);
+        }
+        Biome::CoffeeMountain if h <= SEA_LEVEL + 20 && rng.chance(0.008) => {
+            put(col, lx, h + 1, lz, PLATANERA, true);
+            put(col, lx, h + 2, lz, PLATANERA, true);
+        }
+        Biome::Paramo | Biome::CloudForest if rng.chance(0.02) => {
+            put(col, lx, h + 1, lz, BLACKBERRY_BUSH, true)
+        }
+        Biome::Savanna | Biome::BambooValley if inside && rng.chance(0.006) => {
+            guava_tree(col, lx, h, lz)
+        }
+        _ => {}
     }
 }
 
@@ -97,7 +146,7 @@ pub fn decorate(col: &mut ChunkColumn, wg: &WorldGen) {
                         put(col, lx, h + 2, lz, FRAILEJON, true);
                     }
                 }
-                _ => {}
+                _ => food_plant(col, wg, lx, lz, h, biome),
             }
         }
     }
@@ -134,5 +183,63 @@ mod tests {
             }
         }
         assert!(n >= 4, "solo {n} cafetos");
+    }
+}
+
+#[cfg(test)]
+mod food_tests {
+    use crate::{Biome, WorldGen};
+    use survivalforest_core::block::{BLACKBERRY_BUSH, GUAVA_LEAVES, PLATANERA};
+    use survivalforest_core::{BlockId, BlockPos, LocalPos};
+
+    /// Cuenta un bloque en los chunks (hasta `max`) cuyo centro está en el bioma pedido.
+    fn count_in(seed: u64, biomes: &[Biome], b: BlockId, max: usize) -> usize {
+        let g = WorldGen::new(seed);
+        let mut n = 0;
+        let mut chunks = 0;
+        for i in -60..60 {
+            for j in -60..60 {
+                let (x, z) = (i * 32 + 8, j * 32 + 8);
+                if !biomes.contains(&g.biome_at(x, z)) {
+                    continue;
+                }
+                let c = g.generate(BlockPos::new(x, 0, z).chunk());
+                for ly in 0..384u16 {
+                    for lz in 0..16u8 {
+                        for lx in 0..16u8 {
+                            n += (c.get(LocalPos::new(lx, ly, lz)) == b) as usize;
+                        }
+                    }
+                }
+                chunks += 1;
+                if chunks >= max {
+                    return n;
+                }
+            }
+        }
+        n
+    }
+
+    #[test]
+    fn platanera_in_rainforest() {
+        assert!(count_in(7, &[Biome::Rainforest], PLATANERA, 6) > 0);
+    }
+
+    #[test]
+    fn blackberry_in_paramo() {
+        assert!(count_in(7, &[Biome::Paramo, Biome::CloudForest], BLACKBERRY_BUSH, 6) > 0);
+    }
+
+    #[test]
+    fn guava_in_savanna() {
+        assert!(count_in(7, &[Biome::Savanna, Biome::BambooValley], GUAVA_LEAVES, 12) > 0);
+    }
+
+    #[test]
+    fn plants_deterministic() {
+        assert_eq!(
+            count_in(11, &[Biome::Rainforest], PLATANERA, 3),
+            count_in(11, &[Biome::Rainforest], PLATANERA, 3)
+        );
     }
 }

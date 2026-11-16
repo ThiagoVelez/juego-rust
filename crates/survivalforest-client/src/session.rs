@@ -33,6 +33,20 @@ pub struct PendingWorld(pub PathBuf);
 #[derive(Component)]
 pub struct MenuCamera;
 
+/// ¿Se puede aparecer en este bioma? Se evitan el agua y los biomas sin árboles ni comida
+/// (para empezar con las manos vacías en supervivencia).
+pub fn spawn_biome_ok(b: Biome) -> bool {
+    !matches!(
+        b,
+        Biome::Ocean
+            | Biome::Coast
+            | Biome::Mangrove
+            | Biome::RedDesert
+            | Biome::SnowPeak
+            | Biome::Paramo
+    )
+}
+
 /// Primer lugar seco cerca de (0, 0): bloque sólido debajo y dos de aire encima.
 pub fn spawn_point(g: &WorldGen) -> BlockPos {
     for c in spiral(ChunkPos::new(0, 0), 64) {
@@ -40,7 +54,7 @@ pub fn spawn_point(g: &WorldGen) -> BlockPos {
         let (cx, cz) = (o.x + 8, o.z + 8);
         let h = g.surface_height(cx, cz);
         let b = g.biome_at(cx, cz);
-        if h <= SEA_LEVEL + 1 || matches!(b, Biome::Ocean | Biome::Coast | Biome::Mangrove) {
+        if h <= SEA_LEVEL + 1 || !spawn_biome_ok(b) {
             continue;
         }
         let col = g.generate(c);
@@ -58,6 +72,10 @@ pub fn spawn_point(g: &WorldGen) -> BlockPos {
                     ))
                 };
                 let ground = at(0);
+                let (wx, wz) = (o.x + lx as i32, o.z + lz as i32);
+                if !spawn_biome_ok(g.biome_at(wx, wz)) {
+                    continue;
+                }
                 if ground.def().solid
                     && ground != LEAVES
                     && ground != WATER
@@ -262,6 +280,34 @@ pub fn toggle_pause(
 mod tests {
     use super::*;
     use survivalforest_core::block::AIR;
+
+    #[test]
+    fn spawn_point_avoids_barren_biomes() {
+        for b in [
+            Biome::RedDesert,
+            Biome::SnowPeak,
+            Biome::Paramo,
+            Biome::Ocean,
+            Biome::Coast,
+            Biome::Mangrove,
+        ] {
+            assert!(!spawn_biome_ok(b), "{b:?}");
+        }
+        for b in [
+            Biome::CoffeeMountain,
+            Biome::Rainforest,
+            Biome::Savanna,
+            Biome::BambooValley,
+            Biome::CloudForest,
+        ] {
+            assert!(spawn_biome_ok(b), "{b:?}");
+        }
+        for seed in 0..60u64 {
+            let g = WorldGen::new(seed * 7919 + 3);
+            let p = spawn_point(&g);
+            assert!(spawn_biome_ok(g.biome_at(p.x, p.z)), "semilla {seed}");
+        }
+    }
 
     #[test]
     fn spawn_point_is_dry_land() {
