@@ -4,6 +4,8 @@ pub mod block;
 pub mod coords;
 pub mod item;
 pub mod mode;
+pub mod recipe;
+pub mod tuning;
 
 pub use block::{BlockDef, BlockId, TILE_NAMES, block, blocks, by_key};
 pub use coords::*;
