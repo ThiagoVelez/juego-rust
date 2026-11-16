@@ -280,6 +280,34 @@ pub fn close_screen(ss: &mut ScreenState, p: &mut PlayerState, ex: &mut WorldExt
     ss.message = None;
 }
 
+/// Lo que hay que guardar si el juego se cierra con una pantalla abierta: copias del jugador
+/// y del mundo con la rejilla, la amoladora y el cursor devueltos a la mochila (o al suelo).
+pub fn save_snapshot(
+    ss: &ScreenState,
+    p: &PlayerState,
+    ex: &WorldExtras,
+    feet: DVec3,
+) -> (PlayerState, WorldExtras) {
+    let (mut ss, mut p, mut ex) = (ss.clone(), p.clone(), ex.clone());
+    close_screen(&mut ss, &mut p, &mut ex, feet);
+    (p, ex)
+}
+
+/// Al morir con una pantalla abierta: lo de la rejilla, la amoladora y el cursor cae al suelo
+/// con las demás cosas (no vuelve a la mochila).
+pub fn drop_screen_items(
+    ss: &mut ScreenState,
+    p: &mut PlayerState,
+    ex: &mut WorldExtras,
+    at: DVec3,
+) {
+    let mut out: Vec<ItemStack> = ss.grid.iter_mut().filter_map(|c| c.take()).collect();
+    out.extend(ss.grind.take());
+    out.extend(p.cursor.take());
+    survivalforest_sim::drops::scatter(&mut ex.items, at, out, tuning().death_item_ttl);
+    ss.message = None;
+}
+
 // ---------- Interfaz (Bevy) ----------
 
 use crate::hud::ItemIcons;
@@ -343,7 +371,8 @@ pub fn open_screens(
     let was = ss.screen;
     if st.dead {
         if ss.screen != GameScreen::Death {
-            close_screen(&mut ss, &mut st, &mut ex, feet);
+            let at = st.death_pos.unwrap_or(feet);
+            drop_screen_items(&mut ss, &mut st, &mut ex, at);
             ss.screen = GameScreen::Death;
         }
     } else if let Some((b, pos)) = open.0.take() {
@@ -1132,6 +1161,47 @@ mod tests {
         );
         assert!(p.cursor.is_none());
         assert_eq!(ss.message.as_deref(), Some("Te faltan 1 niveles"));
+    }
+
+    #[test]
+    fn save_snapshot_includes_open_screen_items() {
+        let ss = ScreenState {
+            screen: GameScreen::Inventory,
+            grid: {
+                let mut g = vec![None; 9];
+                g[0] = st("log", 4);
+                g
+            },
+            ..Default::default()
+        };
+        let p = PlayerState {
+            cursor: st("stick", 2),
+            ..Default::default()
+        };
+        let ex = WorldExtras::default();
+        let (sp, _) = save_snapshot(&ss, &p, &ex, DVec3::ZERO);
+        assert_eq!(sp.inv.slots.count(item_by_key("log").unwrap()), 4);
+        assert_eq!(sp.inv.slots.count(item_by_key("stick").unwrap()), 2);
+        assert!(sp.cursor.is_none());
+        // El estado del juego no cambia.
+        assert_eq!(ss.grid[0], st("log", 4));
+    }
+
+    #[test]
+    fn dying_drops_screen_items_on_ground() {
+        let mut ss = ScreenState {
+            screen: GameScreen::Table(BlockPos::new(0, 0, 0)),
+            ..Default::default()
+        };
+        ss.grid[4] = st("iron_ingot", 3);
+        ss.grind = st("pick_wood", 1);
+        let mut p = PlayerState::default();
+        let mut ex = WorldExtras::default();
+        drop_screen_items(&mut ss, &mut p, &mut ex, DVec3::new(1.0, 2.0, 3.0));
+        assert!(p.inv.slots.is_empty());
+        assert_eq!(ex.items.0.len(), 2);
+        assert!(ex.items.0.iter().all(|i| i.ttl == 600.0));
+        assert!(ss.grid.iter().all(|c| c.is_none()) && ss.grind.is_none());
     }
 
     #[test]

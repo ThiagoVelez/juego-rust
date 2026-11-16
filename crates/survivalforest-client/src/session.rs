@@ -210,7 +210,8 @@ pub fn save_world(
         }
         let mut regions = survivalforest_sim::persist::regions_in(&ex.be, &ex.items);
         regions.extend(ex.loaded.iter().copied());
-        for r in regions {
+        // Una región cuyo archivo no se pudo leer no se reescribe (se conserva el original).
+        for r in regions.into_iter().filter(|r| !ex.failed.contains(r)) {
             if let Err(e) =
                 survivalforest_sim::persist::save_extras(&world.dir, r, &ex.be, &ex.items)
             {
@@ -240,12 +241,14 @@ pub fn autosave(
     mut world: ResMut<World>,
     st: Res<crate::survival::PlayerState>,
     ex: Res<crate::survival::WorldExtras>,
+    ss: Res<crate::screens::ScreenState>,
     q: Single<(&Player, &WorldPos)>,
 ) {
     let now = time.elapsed_secs();
     if now - *last >= 60.0 {
         *last = now;
         let (p, wp) = *q;
+        let (st, ex) = crate::screens::save_snapshot(&ss, &st, &ex, wp.pos);
         save_world(&mut world, Some((p, wp)), Some((&st, &ex)));
         info!("Mundo guardado");
     }
@@ -257,14 +260,20 @@ pub fn save_on_exit(
     world: Option<ResMut<World>>,
     st: Option<Res<crate::survival::PlayerState>>,
     ex: Option<Res<crate::survival::WorldExtras>>,
+    ss: Option<Res<crate::screens::ScreenState>>,
     q: Query<(&Player, &WorldPos)>,
 ) {
     if exits.read().next().is_none() {
         return;
     }
     if let Some(mut w) = world {
-        let surv = st.as_deref().zip(ex.as_deref());
-        save_world(&mut w, q.iter().next(), surv);
+        let player = q.iter().next();
+        let feet = player.map(|(_, wp)| wp.pos).unwrap_or_default();
+        let snap = match (st.as_deref(), ex.as_deref(), ss.as_deref()) {
+            (Some(st), Some(ex), Some(ss)) => Some(crate::screens::save_snapshot(ss, st, ex, feet)),
+            _ => None,
+        };
+        save_world(&mut w, player, snap.as_ref().map(|(a, b)| (a, b)));
     }
 }
 

@@ -46,9 +46,27 @@ impl Default for SurvivalSave {
     }
 }
 
-/// Lee `survival.ron`; si no existe (mundo de la etapa 1) o está dañado, empieza de cero.
+/// Guarda una copia `.bak` de un archivo que no se pudo leer (para no perderlo al reescribirlo).
+fn backup(path: &Path) {
+    let mut bak = path.as_os_str().to_owned();
+    bak.push(".bak");
+    let _ = std::fs::copy(path, PathBuf::from(bak));
+}
+
+/// Lee `survival.ron`. Si no existe (mundo de la etapa 1), empieza de cero. Si está dañado,
+/// también, pero antes guarda una copia `survival.ron.bak`.
 pub fn load_survival(world_dir: &Path) -> SurvivalSave {
-    ron_read(&world_dir.join("survival.ron")).unwrap_or_default()
+    let path = world_dir.join("survival.ron");
+    match ron_read(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            if path.exists() {
+                eprintln!("survival.ron dañado ({e}); se guarda una copia en survival.ron.bak");
+                backup(&path);
+            }
+            SurvivalSave::default()
+        }
+    }
 }
 
 pub fn save_survival(world_dir: &Path, s: &SurvivalSave) -> io::Result<()> {
@@ -143,14 +161,31 @@ pub fn save_all_extras(
     Ok(())
 }
 
-pub fn load_extras(world_dir: &Path, r: (i32, i32)) -> (BlockEntities, GroundItems) {
-    match ron_read::<ExtrasFile>(&extras_file(world_dir, r)) {
-        Ok(f) => (
+/// Lee los baúles, hornos y objetos de una región. Sin archivo: vacío. Archivo dañado:
+/// error (y una copia `.bak`); quien llama no debe volver a escribir esa región.
+pub fn try_load_extras(
+    world_dir: &Path,
+    r: (i32, i32),
+) -> Result<(BlockEntities, GroundItems), String> {
+    let path = extras_file(world_dir, r);
+    if !path.exists() {
+        return Ok((BlockEntities::default(), GroundItems::default()));
+    }
+    match ron_read::<ExtrasFile>(&path) {
+        Ok(f) => Ok((
             BlockEntities(f.block_entities.into_iter().collect()),
             f.ground_items,
-        ),
-        Err(_) => (BlockEntities::default(), GroundItems::default()),
+        )),
+        Err(e) => {
+            backup(&path);
+            Err(format!("{}: {e}", path.display()))
+        }
     }
+}
+
+/// Como `try_load_extras`, pero un archivo dañado cuenta como vacío.
+pub fn load_extras(world_dir: &Path, r: (i32, i32)) -> (BlockEntities, GroundItems) {
+    try_load_extras(world_dir, r).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -246,6 +281,27 @@ mod tests {
         save_all_extras(d.path(), &BlockEntities::default(), &g).unwrap();
         let (_, back) = load_extras(d.path(), region_of(BlockPos::new(100, 64, 100)));
         assert_eq!(back, g);
+    }
+
+    #[test]
+    fn corrupt_extras_are_kept_with_backup() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("region")).unwrap();
+        let f = d.path().join("region").join("r.0.0.extra.ron");
+        std::fs::write(&f, "(version: 1, block_entities: [((x: 1, y: 2, z: 3), Chest((slots: [Some((item: \"no_existe\", count: 1))])))], ground_items: ([]))").unwrap();
+        assert!(try_load_extras(d.path(), (0, 0)).is_err());
+        assert!(f.exists(), "el original no se borra");
+        assert!(d.path().join("region").join("r.0.0.extra.ron.bak").exists());
+        assert!(try_load_extras(d.path(), (5, 5)).unwrap().0.0.is_empty());
+    }
+
+    #[test]
+    fn corrupt_survival_is_backed_up() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("survival.ron"), "(version: 1, inventory: ((slots: ([Some((item: \"no_existe\", count: 1))]), selected: 0)))").unwrap();
+        let s = load_survival(d.path());
+        assert!(s.inventory.slots.is_empty());
+        assert!(d.path().join("survival.ron.bak").exists());
     }
 
     #[test]

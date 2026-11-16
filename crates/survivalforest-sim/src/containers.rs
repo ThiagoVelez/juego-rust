@@ -20,8 +20,11 @@ pub struct BlockEntities(pub HashMap<BlockPos, BlockEntity>);
 
 impl BlockEntities {
     pub fn on_placed(&mut self, pos: BlockPos, b: BlockId) {
+        // Si ya hay contenido (volver a abrir el baúl), se conserva.
         if b == CHEST {
-            self.0.insert(pos, BlockEntity::Chest(Chest::default()));
+            self.0
+                .entry(pos)
+                .or_insert_with(|| BlockEntity::Chest(Chest::default()));
         } else if b == FURNACE || b == FURNACE_LIT {
             self.0
                 .entry(pos)
@@ -80,6 +83,18 @@ mod tests {
             be.0[&BlockPos::new(1, 2, 3)],
             BlockEntity::Chest(_)
         ));
+    }
+
+    #[test]
+    fn reopening_keeps_chest_contents() {
+        let mut be = BlockEntities::default();
+        let p = BlockPos::new(1, 61, 1);
+        be.on_placed(p, CHEST);
+        if let Some(BlockEntity::Chest(c)) = be.0.get_mut(&p) {
+            c.slots.0[0] = st("coal", 9);
+        }
+        be.on_placed(p, CHEST);
+        assert!(matches!(&be.0[&p], BlockEntity::Chest(c) if c.slots.0[0] == st("coal", 9)));
     }
 
     #[test]

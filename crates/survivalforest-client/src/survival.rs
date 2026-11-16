@@ -68,6 +68,8 @@ pub struct WorldExtras {
     pub be: BlockEntities,
     pub items: GroundItems,
     pub loaded: HashSet<(i32, i32)>,
+    /// Regiones cuyo archivo estaba dañado: no se leen ni se escriben más (hay una copia `.bak`).
+    pub failed: HashSet<(i32, i32)>,
 }
 
 fn hurt(st: &mut PlayerState, dmg: f32) {
@@ -133,7 +135,7 @@ use crate::player::{MoveInput, Player, WorldPos};
 use crate::streaming::{RemeshRequest, World, set_block};
 use survivalforest_core::BlockPos;
 use survivalforest_core::block::{FURNACE, FURNACE_LIT};
-use survivalforest_sim::persist::{load_extras, region_of};
+use survivalforest_sim::persist::{region_of, try_load_extras};
 
 /// Lee del disco los baúles, hornos y objetos de las regiones cercanas que falten.
 pub fn load_nearby_regions(dir: &std::path::Path, ex: &mut WorldExtras, feet: DVec3) {
@@ -145,10 +147,21 @@ pub fn load_nearby_regions(dir: &std::path::Path, ex: &mut WorldExtras, feet: DV
     for dz in -1..=1 {
         for dx in -1..=1 {
             let k = (r.0 + dx, r.1 + dz);
-            if ex.loaded.insert(k) {
-                let (be, items) = load_extras(dir, k);
-                ex.be.0.extend(be.0);
-                ex.items.0.extend(items.0);
+            if ex.loaded.contains(&k) || ex.failed.contains(&k) {
+                continue;
+            }
+            match try_load_extras(dir, k) {
+                Ok((be, items)) => {
+                    ex.loaded.insert(k);
+                    ex.be.0.extend(be.0);
+                    ex.items.0.extend(items.0);
+                }
+                Err(e) => {
+                    warn!(
+                        "No se pudieron leer los baúles y objetos ({e}); se deja el archivo intacto"
+                    );
+                    ex.failed.insert(k);
+                }
             }
         }
     }

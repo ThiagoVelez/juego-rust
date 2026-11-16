@@ -161,7 +161,19 @@ pub fn physics_step(
     let wish = fwd * input.dir.y as f64 + right * input.dir.x as f64;
     p.in_water = survivalforest_sim::swim::in_water(&*world, &Aabb::player(wp.pos));
     if !p.flying && p.in_water.0 {
-        p.vel = survivalforest_sim::swim::swim_velocity(p.vel, wish, input.jump, dt);
+        // Nadar (con impulso para salir a una orilla de un bloque).
+        let (b, v) = survivalforest_sim::swim::swim_step(
+            &*world,
+            Aabb::player(wp.pos),
+            p.vel,
+            wish,
+            input.jump,
+            dt,
+        );
+        wp.pos = b.feet();
+        p.vel = v;
+        p.on_ground = false;
+        return;
     } else if p.flying {
         let speed = if input.sprint {
             FLY_SPRINT_SPEED
